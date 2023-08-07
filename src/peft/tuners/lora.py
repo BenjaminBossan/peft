@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 import math
 import re
 import warnings
@@ -126,6 +128,7 @@ class LoraModel(torch.nn.Module):
     Args:
         model ([`~transformers.PreTrainedModel`]): The model to be adapted.
         config ([`LoraConfig`]): The configuration of the Lora model.
+        adapter_name (`str`): The name of the adapter, defaults to `"default"`.
 
     Returns:
         `torch.nn.Module`: The Lora model.
@@ -175,30 +178,40 @@ class LoraModel(torch.nn.Module):
         - **peft_config** ([`LoraConfig`]): The configuration of the Lora model.
     """
 
-    def __init__(self, model, config, adapter_name):
+    def __init__(self, model, config: LoraConfig, adapter_name: str) -> None:
         super().__init__()
         self.model = model
         self.forward = self.model.forward
-        self.peft_config = config
-        self.add_adapter(adapter_name, self.peft_config[adapter_name])
+        self.peft_config: dict[str, LoraConfig] = {}
+        self.add_adapter(adapter_name, config)
 
         # transformers models have a .config attribute, whose presence is assumed later on
         if not hasattr(self, "config"):
             self.config = {"model_type": "custom"}
 
-    def add_adapter(self, adapter_name, config=None):
-        if config is not None:
-            model_config = getattr(self.model, "config", {"model_type": "custom"})
-            if hasattr(model_config, "to_dict"):
-                model_config = model_config.to_dict()
+    def _check_new_adapter_config(self, config) -> None:
+        """Check config when a new adapter is being added.
 
-            config = self._prepare_lora_config(config, model_config)
-            self.peft_config[adapter_name] = config
-        self._find_and_replace(adapter_name)
-        if len(self.peft_config) > 1 and self.peft_config[adapter_name].bias != "none":
+        Raise a ValueError if there is something wrong with the config or if it conflicts with existing adapters.
+
+        """
+        # TODO: there should be a check if any of the existing adapters actually has bias != "none", or else the check
+        # does not fully correspond to the error message.
+        if self.peft_config and config.bias != "none":
             raise ValueError(
-                "LoraModel supports only 1 adapter with bias. When using multiple adapters, set bias to 'none' for all adapters."
+                f"{self.__class__.__name__} supports only 1 adapter with bias. When using multiple adapters, "
+                "set bias to 'none' for all adapters."
             )
+
+    def add_adapter(self, adapter_name: str, config: LoraConfig) -> None:
+        model_config = getattr(self.model, "config", {"model_type": "custom"})
+        if hasattr(model_config, "to_dict"):
+            model_config = model_config.to_dict()
+        config = self._prepare_lora_config(config, model_config)
+        self._check_new_adapter_config(config)
+
+        self.peft_config[adapter_name] = config
+        self._find_and_replace(adapter_name)
         mark_only_lora_as_trainable(self.model, self.peft_config[adapter_name].bias)
         if self.peft_config[adapter_name].inference_mode:
             _freeze_adapter(self.model, adapter_name)

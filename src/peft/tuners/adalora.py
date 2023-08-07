@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import warnings
 from dataclasses import dataclass, field
@@ -12,7 +14,6 @@ from ..import_utils import is_bnb_4bit_available, is_bnb_available
 from ..utils import (
     TRANSFORMERS_MODELS_TO_ADALORA_TARGET_MODULES_MAPPING,
     PeftType,
-    _freeze_adapter,
     _get_submodules,
     transpose,
 )
@@ -20,7 +21,6 @@ from .lora import (
     LoraConfig,
     LoraLayer,
     LoraModel,
-    mark_only_lora_as_trainable,
 )
 
 
@@ -87,37 +87,41 @@ class AdaLoraModel(LoraModel):
         - **peft_config** ([`AdaLoraConfig`]): The configuration of the AdaLora model.
     """
 
-    def __init__(self, model, config, adapter_name):
+    def __init__(self, model, config: AdaLoraConfig, adapter_name: str) -> None:
         nn.Module.__init__(self)
         self.model = model
-        self.peft_config = config
-        self.add_adapter(adapter_name, self.peft_config[adapter_name])
+        self.peft_config: dict[str, AdaLoraConfig] = {}
+        self.add_adapter(adapter_name, config)
 
-    def add_adapter(self, adapter_name, config=None):
-        if config is not None:
-            model_config = self.model.config.to_dict() if hasattr(self.model.config, "to_dict") else self.model.config
-            config = self._prepare_adalora_config(config, model_config)
-            self.peft_config[adapter_name] = config
-        self._find_and_replace(adapter_name)
-        if len(self.peft_config) > 1 and self.peft_config[adapter_name].bias != "none":
+    def _check_new_adapter_config(self, config) -> None:
+        """Check config when a new adapter is being added.
+
+        Raise a ValueError if there is something wrong with the config or if it conflicts with existing adapters.
+
+        """
+        # TODO: there should be a check if any of the existing adapters actually has bias != "none", or else the check
+        # does not fully correspond to the error message.
+        if self.peft_config and config.bias != "none":
             raise ValueError(
-                "AdaLoraModel supports only 1 adapter with bias. When using multiple adapters, set bias to 'none' for all adapters."
+                f"{self.__class__.__name__} supports only 1 adapter with bias. When using multiple adapters, "
+                "set bias to 'none' for all adapters."
             )
-        traininable_mode_counter = 0
-        for config in self.peft_config.values():
-            if not config.inference_mode:
-                traininable_mode_counter += 1
 
+        # check number of trainable adapters
+        traininable_mode_counter = 0 if config.inference_mode else 1
+        for config_ in self.peft_config.values():
+            if not config_.inference_mode:
+                traininable_mode_counter += 1
         if traininable_mode_counter > 1:
             raise ValueError(
-                "AdaLoraModel supports only 1 trainable adapter. "
-                "When using multiple adapters, set inference_mode to True for all adapters except the one you want to train."
+                f"{self.__class__.__name__} supports only 1 trainable adapter. "
+                "When using multiple adapters, set inference_mode to True for all adapters except the one "
+                "you want to train."
             )
 
-        mark_only_lora_as_trainable(self.model, self.peft_config[adapter_name].bias)
-        if self.peft_config[adapter_name].inference_mode:
-            _freeze_adapter(self.model, adapter_name)
-        else:
+    def add_adapter(self, adapter_name: str, config: AdaLoraConfig) -> None:
+        super().add_adapter(adapter_name, config)
+        if not self.peft_config[adapter_name].inference_mode:
             self.trainable_adapter_name = adapter_name
             self.rankallocator = RankAllocator(self.model, self.peft_config[adapter_name], self.trainable_adapter_name)
 

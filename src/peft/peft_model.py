@@ -84,7 +84,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
     Args:
         model ([`~transformers.PreTrainedModel`]): The base transformer model used for Peft.
         peft_config ([`PeftConfig`]): The configuration of the Peft model.
-
+        adapter_name (`str`): The name of the adapter, defaults to `"default"`.
 
     **Attributes**:
         - **base_model** ([`~transformers.PreTrainedModel`]) -- The base transformer model used for Peft.
@@ -111,9 +111,8 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         self.peft_type = peft_config.peft_type
         if not isinstance(peft_config, PromptLearningConfig):
             self.peft_config[adapter_name] = peft_config
-            self.base_model = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type](
-                self.base_model, self.peft_config, adapter_name
-            )
+            cls = PEFT_TYPE_TO_MODEL_MAPPING[peft_config.peft_type]
+            self.base_model = cls(self.base_model, peft_config, adapter_name)
             self.set_additional_trainable_modules(peft_config, adapter_name)
         else:
             self.add_adapter(adapter_name, peft_config)
@@ -482,16 +481,22 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 f"Found {self.peft_type} and {peft_config.peft_type}."
             )
         self.peft_config[adapter_name] = peft_config
-        if isinstance(peft_config, PromptLearningConfig):
-            if hasattr(self.config, "to_dict"):
-                dict_config = self.config.to_dict()
-            else:
-                dict_config = self.config
 
-            peft_config = _prepare_prompt_learning_config(peft_config, dict_config)
-            self._setup_prompt_encoder(adapter_name)
-        else:
-            self.base_model.add_adapter(adapter_name, peft_config)
+        try:
+            if isinstance(peft_config, PromptLearningConfig):
+                if hasattr(self.config, "to_dict"):
+                    dict_config = self.config.to_dict()
+                else:
+                    dict_config = self.config
+
+                peft_config = _prepare_prompt_learning_config(peft_config, dict_config)
+                self._setup_prompt_encoder(adapter_name)
+            else:
+                self.base_model.add_adapter(adapter_name, peft_config)
+        except Exception:
+            # somthing went wrong, roll back
+            del self.peft_config[adapter_name]
+            raise
 
         self.set_additional_trainable_modules(peft_config, adapter_name)
 

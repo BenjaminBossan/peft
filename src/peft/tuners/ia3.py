@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 import re
 import warnings
 from dataclasses import asdict, dataclass, field
@@ -125,18 +127,20 @@ class IA3Model(torch.nn.Module):
         - **peft_config** ([`ia3Config`]): The configuration of the (IA)^3 model.
     """
 
-    def __init__(self, model, config, adapter_name):
+    def __init__(self, model, config: IA3Config, adapter_name: str) -> None:
         super().__init__()
         self.model = model
         self.forward = self.model.forward
-        self.peft_config = config
-        self.add_adapter(adapter_name, self.peft_config[adapter_name])
+        self.peft_config: dict[str, IA3Config] = {}
+        self.add_adapter(adapter_name, config)
 
-    def add_adapter(self, adapter_name, config=None):
-        if config is not None:
-            model_config = self.model.config.to_dict() if hasattr(self.model.config, "to_dict") else self.model.config
-            config = self._prepare_ia3_config(config, model_config)
-            self.peft_config[adapter_name] = config
+    def add_adapter(self, adapter_name: str, config: IA3Config) -> None:
+        model_config = getattr(self.model, "config", {"model_type": "custom"})
+        if hasattr(model_config, "to_dict"):
+            model_config = model_config.to_dict()
+        config = self._prepare_ia3_config(config, model_config)
+
+        self.peft_config[adapter_name] = config
         self._find_and_replace(adapter_name)
 
         mark_only_ia3_as_trainable(self.model)

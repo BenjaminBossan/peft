@@ -65,6 +65,7 @@ from .testing_utils import (
     require_torch_multi_gpu,
 )
 
+# TODO: add VeRA GPU test here?
 
 # A full testing suite that tests all the necessary features on GPU. The tests should
 # rely on the example scripts to test the features.

@@ -363,9 +363,6 @@ class BaseTuner(nn.Module, ABC):
         self._check_merge_allowed()
         for module in self.model.modules():
             if isinstance(module, BaseTunerLayer):
-                # if hasattr(self, "vera_A"):
-                #     module.merge(self.vera_A, self.vera_B, adapter_names=adapter_names)
-                # else:
                 with onload_layer(module):
                     module.merge(adapter_names=adapter_names)
 

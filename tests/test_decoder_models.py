@@ -254,6 +254,7 @@ class PeftDecoderModelTester(unittest.TestCase, PeftCommonTester):
                 "adalora_kwargs": {"init_lora_weights": [False]},
                 "vera_kwargs": {"init_vera_weights": [False]},
                 "ia3_kwargs": {"init_ia3_weights": [False]},
+                "vera_kwargs": {"init_vera_weights": [False]},
                 "task_type": "CAUSAL_LM",
             },
             filter_params_func=skip_adalora_and_gpt2,

@@ -95,6 +95,7 @@ def get_peft_model_state_dict(
                 rank_pattern = {k.replace(f".{adapter_name}", ""): v for k, v in rank_pattern.items()}
                 config.rank_pattern = rank_pattern
                 to_return = model.resize_state_dict_by_rank_pattern(rank_pattern, to_return, adapter_name)
+
     elif config.peft_type == PeftType.VERA:
         to_return = {k: state_dict[k] for k in state_dict if "vera_lambda_" in k}
         if config.save_projection:
@@ -228,6 +229,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
         PeftType.VERA,
         PeftType.OFT,
         PeftType.POLY,
+        PeftType.VERA,
     ):
         peft_model_state_dict = {}
         parameter_prefix = {
@@ -239,6 +241,7 @@ def set_peft_model_state_dict(model, peft_model_state_dict, adapter_name="defaul
             PeftType.LOKR: "lokr_",
             PeftType.OFT: "oft_",
             PeftType.POLY: "poly_",
+            PeftType.VERA: "vera_lambda_",
         }[config.peft_type]
         for k, v in state_dict.items():
             if parameter_prefix in k:

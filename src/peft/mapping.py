@@ -82,6 +82,7 @@ PEFT_TYPE_TO_CONFIG_MAPPING: dict[str, PeftConfig] = {
     "MULTITASK_PROMPT_TUNING": MultitaskPromptTuningConfig,
     "OFT": OFTConfig,
     "POLY": PolyConfig,
+    "VERA": VeraConfig,
 }
 
 PEFT_TYPE_TO_TUNER_MAPPING = {
@@ -93,6 +94,7 @@ PEFT_TYPE_TO_TUNER_MAPPING = {
     "IA3": IA3Model,
     "OFT": OFTModel,
     "POLY": PolyModel,
+    "VERA": VeraModel,
 }
 
 

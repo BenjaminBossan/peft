@@ -19,7 +19,8 @@ import numpy as np
 from diffusers import StableDiffusionPipeline
 from parameterized import parameterized
 
-from peft import LoHaConfig, LoraConfig, OFTConfig, get_peft_model
+from peft import LoHaConfig, LoraConfig, OFTConfig, VeraConfig, get_peft_model
+>>>>>>> 0ccb3f7a (removes stable diffusion tests)
 
 from .testing_common import ClassInstantier, PeftCommonTester
 from .testing_utils import temp_seed
@@ -77,6 +78,7 @@ CLASSES_MAPPING = {
     "loha": (LoHaConfig, CONFIG_TESTING_KWARGS[1]),
     "lokr": (LoHaConfig, CONFIG_TESTING_KWARGS[1]),
     "oft": (OFTConfig, CONFIG_TESTING_KWARGS[2]),
+    "vera": (VeraConfig, CONFIG_TESTING_KWARGS[2]),
 }
 
 
@@ -129,6 +131,7 @@ class StableDiffusionModelTester(TestCase, PeftCommonTester):
                 "lora_kwargs": {"init_lora_weights": [False]},
                 "loha_kwargs": {"init_weights": [False]},
                 "oft_kwargs": {"init_weights": [False]},
+                "vera_kwargs": {"init_vera_weights": [False]},
             },
         )
     )
@@ -221,6 +224,7 @@ class StableDiffusionModelTester(TestCase, PeftCommonTester):
                 "loha_kwargs": {"init_weights": [False]},
                 "lokr_kwargs": {"init_weights": [False]},
                 "oft_kwargs": {"init_weights": [False]},
+                "vera_kwargs": {"init_vera_weights": [False]},
             },
         )
     )

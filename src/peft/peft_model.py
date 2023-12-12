@@ -134,6 +134,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         if hasattr(self.base_model, "config") and hasattr(self.base_model.config, "pretraining_tp"):
             self.base_model.config.pretraining_tp = 1
 
+        # https://github.com/huggingface/transformers/pull/26681/ introduced new cache format
+        # for some architectures which requires a special fix for prompt tuning etc.
+        self._transformers_new_cache_archs = ["llama", "mistral", "persimmon", "phi"]
+
     @property
     def peft_config(self) -> Dict[str, PeftConfig]:
         if self._is_prompt_learning:
@@ -1139,23 +1143,26 @@ class PeftModelForCausalLM(PeftModel):
         peft_config = self.active_peft_config
         model_kwargs = self.base_model_prepare_inputs_for_generation(*args, **kwargs)
 
-        _uses_transformers_4_26 = True
+        _uses_transformers_4_26 = packaging.version.parse(transformers.__version__) >= packaging.version.parse("4.36.0")
 
         if peft_config.is_prompt_learning:
             if model_kwargs.get("attention_mask", None) is not None:
-                if packaging.version.parse(transformers.__version__) < packaging.version.parse("4.36.0"):
-                    # TODO figure out why this workaround is necessary, see #1252 for context
-                    size = model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
-                    _uses_transformers_4_26 = False
-                elif model_kwargs["past_key_values"] is None:
-                    size = model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
+                if _uses_transformers_4_26 and not self.base_model.config.model_type in self._transformers_new_cache_archs:
+                    if model_kwargs["past_key_values"] is None:
+                        prefix_attention_mask = torch.ones(
+                            model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
+                        ).to(model_kwargs["input_ids"].device)
+                    else:
+                        prefix_attention_mask = torch.ones(
+                            model_kwargs["input_ids"].shape[0], model_kwargs["past_key_values"][0][0].shape[-2]
+                        ).to(model_kwargs["input_ids"].device)
+                    model_kwargs["attention_mask"] = torch.cat(
+                        (prefix_attention_mask, model_kwargs["attention_mask"]), dim=1
+                    )
                 else:
-                    size = model_kwargs["input_ids"].shape[0], model_kwargs["past_key_values"][0][0].shape[-2]
-
-                prefix_attention_mask = torch.ones(size).to(model_kwargs["input_ids"].device)
-                model_kwargs["attention_mask"] = torch.cat(
-                    (prefix_attention_mask, model_kwargs["attention_mask"]), dim=1
-                )
+                    prefix_attention_mask = torch.ones(
+                        model_kwargs["input_ids"].shape[0], peft_config.num_virtual_tokens
+                    ).to(model_kwargs["input_ids"].device)
 
             if model_kwargs.get("position_ids", None) is not None:
                 warnings.warn("Position ids are not supported for parameter efficient tuning. Ignoring position ids.")
@@ -1177,10 +1184,6 @@ class PeftModelForCausalLM(PeftModel):
                     prompts = prompts.to(inputs_embeds.dtype)
                     model_kwargs["inputs_embeds"] = torch.cat((prompts, inputs_embeds), dim=1)
                     model_kwargs["input_ids"] = None
-
-        if _uses_transformers_4_26:
-            # TODO: why?
-            model_kwargs = self.base_model_prepare_inputs_for_generation(**model_kwargs)
 
         return model_kwargs
 

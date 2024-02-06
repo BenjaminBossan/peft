@@ -14,15 +14,26 @@
 
 from setuptools import find_packages, setup
 
+
+VERSION = "0.8.2"
+
 extras = {}
 extras["quality"] = ["black ~= 22.0", "ruff>=0.0.241", "urllib3<=2.0.0"]
 extras["docs_specific"] = ["hf-doc-builder"]
 extras["dev"] = extras["quality"] + extras["docs_specific"]
-extras["test"] = extras["dev"] + ["pytest", "pytest-cov", "pytest-xdist", "parameterized", "datasets", "diffusers<0.21.0"]
+extras["test"] = extras["dev"] + [
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "parameterized",
+    "datasets",
+    "diffusers<0.21.0",
+    "scipy",
+]
 
 setup(
     name="peft",
-    version="0.6.3.dev0",
+    version=VERSION,
     description="Parameter-Efficient Fine-Tuning (PEFT)",
     license_files=["LICENSE"],
     long_description=open("README.md", "r", encoding="utf-8").read(),
@@ -47,6 +58,7 @@ setup(
         "tqdm",
         "accelerate>=0.21.0",
         "safetensors",
+        "huggingface_hub>=0.17.0",
     ],
     extras_require=extras,
     classifiers=[
@@ -64,7 +76,7 @@ setup(
 
 # Release checklist
 # 1. Change the version in __init__.py and setup.py to the release version, e.g. from "0.6.0.dev0" to "0.6.0"
-# 2. Check if there are any deprecations that need to be addressed for this release by seaching for "# TODO" in the code
+# 2. Check if there are any deprecations that need to be addressed for this release by searching for "# TODO" in the code
 # 3. Commit these changes with the message: "Release: VERSION", create a PR and merge it.
 # 4. Add a tag in git to mark the release: "git tag -a VERSION -m 'Adds tag VERSION for pypi' "
 #    Push the tag to git:
@@ -78,8 +90,9 @@ setup(
 # 6. Upload the package to the pypi test server first:
 #      twine upload dist/* -r pypitest
 # 7. Check that you can install it in a virtualenv by running:
-#      pip install -i https://testpypi.python.org/pypi peft
+#      pip install -i https://testpypi.python.org/pypi --extra-index-url https://pypi.org/simple peft
 # 8. Upload the final version to actual pypi:
 #      twine upload dist/* -r pypi
 # 9. Add release notes to the tag on https://github.com/huggingface/peft/releases once everything is looking hunky-dory.
+#      Check the notes here: https://docs.google.com/document/d/1k-sOIfykuKjWcOIALqjhFKz4amFEp-myeJUJEzNgjoU/edit?usp=sharing
 # 10. Update the version in __init__.py, setup.py to the bumped minor version + ".dev0" (e.g. from "0.6.0" to "0.7.0.dev0")

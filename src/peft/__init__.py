@@ -17,7 +17,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__version__ = "0.6.3.dev0"
+__version__ = "0.8.2"
 
 from .auto import (
     AutoPeftModel,
@@ -35,6 +35,7 @@ from .mapping import (
     get_peft_model,
     inject_adapter_in_model,
 )
+from .mixed_model import PeftMixedModel
 from .peft_model import (
     PeftModel,
     PeftModelForCausalLM,
@@ -48,6 +49,7 @@ from .tuners import (
     AdaptionPromptConfig,
     AdaptionPromptModel,
     LoraConfig,
+    LoftQConfig,
     LoraModel,
     LoHaConfig,
     LoHaModel,
@@ -67,6 +69,10 @@ from .tuners import (
     PromptTuningInit,
     MultitaskPromptTuningConfig,
     MultitaskPromptTuningInit,
+    OFTConfig,
+    OFTModel,
+    PolyConfig,
+    PolyModel,
 )
 from .utils import (
     TRANSFORMERS_MODELS_TO_PREFIX_TUNING_POSTPROCESS_MAPPING,
@@ -79,5 +85,6 @@ from .utils import (
     set_peft_model_state_dict,
     shift_tokens_right,
     load_peft_weights,
+    cast_mixed_precision_params,
 )
 from .config import PeftConfig, PromptLearningConfig

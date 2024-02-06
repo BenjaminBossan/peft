@@ -41,6 +41,7 @@ if is_bnb_available():
             # Freezing the pre-trained weight matrix
             self.get_base_layer().weight.requires_grad = False
 
+            self._active_adapter = adapter_name
             self.update_layer(adapter_name, r, lora_alpha, lora_dropout, init_lora_weights)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -70,7 +71,8 @@ if is_bnb_available():
                 if requires_conversion:
                     output = output.to(expected_dtype)
                 output = output * scaling / ranknum
-                result += output
+                # inplace operation on view is forbidden for MatMul8bitLtBackward, so avoid it
+                result = result + output
             return result
 
         def __repr__(self) -> str:
@@ -97,6 +99,7 @@ if is_bnb_4bit_available():
             # Freezing the pre-trained weight matrix
             self.get_base_layer().weight.requires_grad = False
 
+            self._active_adapter = adapter_name
             self.update_layer(adapter_name, r, lora_alpha, lora_dropout, init_lora_weights)
 
         def forward(self, x: torch.Tensor, *args: Any, **kwargs: Any) -> torch.Tensor:
@@ -127,7 +130,7 @@ if is_bnb_4bit_available():
                 requires_conversion = not torch.is_autocast_enabled()
                 if requires_conversion:
                     expected_dtype = result.dtype
-                    compute_dtype = lora_A.weight.dtype
+                    compute_dtype = lora_A.dtype
                     if x.dtype != compute_dtype:
                         x = x.to(compute_dtype)
 

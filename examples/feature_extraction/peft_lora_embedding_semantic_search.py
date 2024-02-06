@@ -42,7 +42,7 @@ logger = get_logger(__name__)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Training a PEFT model for Sematic Search task")
+    parser = argparse.ArgumentParser(description="Training a PEFT model for Semantic Search task")
     parser.add_argument("--dataset_name", type=str, default=None, help="dataset name on HF hub")
     parser.add_argument(
         "--max_length",
@@ -138,12 +138,12 @@ def parse_args():
     parser.add_argument(
         "--sanity_test",
         action="store_true",
-        help="Whether to enable experiment trackers for logging.",
+        help="Whether to enable sanity test.",
     )
     parser.add_argument(
         "--use_peft",
         action="store_true",
-        help="Whether to enable experiment trackers for logging.",
+        help="Whether to use PEFT.",
     )
     args = parser.parse_args()
 

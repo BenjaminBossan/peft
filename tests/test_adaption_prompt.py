@@ -267,9 +267,8 @@ class AdaptionPromptTester(TestCase, PeftCommonTester):
         # check if `generate` works
         _ = model.generate(input_ids=input_ids, attention_mask=attention_mask)
 
-        with self.assertRaises(TypeError):
-            # check if `generate` raises an error if no positional arguments are passed
-            _ = model.generate(input_ids, attention_mask=attention_mask)
+        # check if `generate` works if positional arguments are passed
+        _ = model.generate(input_ids, attention_mask=attention_mask)
 
     def test_sequence_adapter_ops(self) -> None:
         """Test sequence of adapter operations."""
@@ -304,7 +303,7 @@ class AdaptionPromptTester(TestCase, PeftCommonTester):
         self.assertFalse(torch.allclose(default_before.logits, default_after.logits))
 
         with adapted.disable_adapter():
-            # Test that the output is the same as the original ouput.
+            # Test that the output is the same as the original output.
             default_disabled = adapted(input_ids=input_ids, attention_mask=attention_mask, labels=target_ids)
             assert_close(original_before.logits, default_disabled.logits, rtol=0, atol=0)
 
@@ -387,6 +386,7 @@ class AdaptionPromptTester(TestCase, PeftCommonTester):
 
     def test_use_cache(self) -> None:
         """Test that AdaptionPrompt works when Llama config use_cache=True."""
+        torch.manual_seed(0)
         input_ids = torch.LongTensor([[1, 1, 1], [2, 1, 2]]).to(self.torch_device)
         original = LlamaForCausalLM(
             LlamaConfig(
@@ -397,7 +397,7 @@ class AdaptionPromptTester(TestCase, PeftCommonTester):
                 num_attention_heads=4,
                 use_cache=False,
             )
-        )
+        ).eval()
         adapted = get_peft_model(
             original, AdaptionPromptConfig(adapter_layers=2, adapter_len=4, task_type="CAUSAL_LM")
         )

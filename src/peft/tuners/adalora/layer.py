@@ -20,6 +20,7 @@ import torch
 from torch import nn
 
 from peft.tuners.lora import LoraLayer
+from peft.tuners.tuners_utils import check_adapters_to_merge
 from peft.utils import transpose
 
 
@@ -37,6 +38,9 @@ class AdaLoraLayer(LoraLayer):
         self.ranknum = nn.ParameterDict({})
 
     def update_layer(self, adapter_name, r, lora_alpha, lora_dropout, init_lora_weights):
+        if r <= 0:
+            raise ValueError(f"`r` should be a positive integer value but the value passed is {r}")
+
         self.r[adapter_name] = r
         self.lora_alpha[adapter_name] = lora_alpha
         if lora_dropout > 0.0:
@@ -109,14 +113,10 @@ class SVDLinear(nn.Module, AdaLoraLayer):
                 The list of adapter names that should be merged. If None, all active adapters will be merged. Defaults
                 to `None`.
         """
-        if self.merged:
-            warnings.warn(
-                f"Already following adapters were merged {','.join(self.merged_adapters)}. "
-                f"You are now additionally merging {','.join(self.active_adapters)}."
-            )
-
-        if adapter_names is None:
-            adapter_names = self.active_adapters
+        adapter_names = check_adapters_to_merge(self, adapter_names)
+        if not adapter_names:
+            # no adapter to merge
+            return
 
         for active_adapter in adapter_names:
             base_layer = self.get_base_layer()
@@ -138,6 +138,9 @@ class SVDLinear(nn.Module, AdaLoraLayer):
                 self.merged_adapters.append(active_adapter)
 
     def unmerge(self) -> None:
+        """
+        This method unmerges all merged adapter layers from the base weights.
+        """
         if not self.merged:
             warnings.warn("Already unmerged. Nothing to do.")
             return

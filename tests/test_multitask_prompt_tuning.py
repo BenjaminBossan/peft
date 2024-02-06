@@ -217,16 +217,16 @@ class MultiTaskPromptTuningTester(TestCase, PeftCommonTester):
         # check if `generate` works
         _ = model.generate(input_ids=input_ids, attention_mask=attention_mask, task_ids=task_ids)
 
-        with self.assertRaises(TypeError):
-            # check if `generate` raises an error if no positional arguments are passed
-            _ = model.generate(input_ids, attention_mask=attention_mask)
+        # check if `generate` works if positional arguments are passed
+        _ = model.generate(input_ids, attention_mask=attention_mask, task_ids=task_ids)
 
     def test_use_cache(self) -> None:
         """Test that MultiTaskPromptTuning works when Llama config use_cache=True."""
+        torch.manual_seed(0)
         input_ids = torch.LongTensor([[1, 1, 1], [2, 1, 2]]).to(self.torch_device)
         task_ids = torch.LongTensor([1, 2]).to(self.torch_device)
 
-        original = LlamaForCausalLM(self._create_test_llama_config())
+        original = LlamaForCausalLM(self._create_test_llama_config()).eval()
         mpt = get_peft_model(original, self._create_multitask_prompt_tuning_config())
         mpt = mpt.to(self.torch_device)
 

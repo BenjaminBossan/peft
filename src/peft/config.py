@@ -35,12 +35,16 @@ class PeftConfigMixin(PushToHubMixin):
     Args:
         peft_type (Union[[`~peft.utils.config.PeftType`], `str`]): The type of Peft method to use.
     """
+
     peft_type: Optional[PeftType] = field(default=None, metadata={"help": "The type of PEFT model."})
     auto_mapping: Optional[dict] = field(
         default=None, metadata={"help": "An auto mapping dict to help retrieve the base model class if needed."}
     )
 
     def to_dict(self) -> Dict:
+        r"""
+        Returns the configuration for your adapter model as a dictionary.
+        """
         return asdict(self)
 
     def save_pretrained(self, save_directory: str, **kwargs) -> None:
@@ -77,6 +81,44 @@ class PeftConfigMixin(PushToHubMixin):
             writer.write(json.dumps(output_dict, indent=2, sort_keys=True))
 
     @classmethod
+    def from_peft_type(cls, **kwargs):
+        r"""
+        This method loads the configuration of your adapter model from a set of kwargs.
+
+        The appropriate configuration type is determined by the `peft_type` argument. If `peft_type` is not provided,
+        the calling class type is instantiated.
+
+        Args:
+            kwargs (configuration keyword arguments):
+                Keyword arguments passed along to the configuration initialization.
+        """
+        # Avoid circular dependency .. TODO: fix this with a larger refactor
+        from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+
+        # TODO: this hack is needed to fix the following issue (on commit 702f937):
+        # if someone saves a default config and loads it back with `PeftConfig` class it yields to
+        # not loading the correct config class.
+
+        # from peft import AdaLoraConfig, PeftConfig
+        # peft_config = AdaLoraConfig()
+        # print(peft_config)
+        # >>> AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, auto_mapping=None, base_model_name_or_path=None,
+        # revision=None, task_type=None, inference_mode=False, r=8, target_modules=None, lora_alpha=8, lora_dropout=0.0, ...
+        #
+        # peft_config.save_pretrained("./test_config")
+        # peft_config = PeftConfig.from_pretrained("./test_config")
+        # print(peft_config)
+        # >>> PeftConfig(peft_type='ADALORA', auto_mapping=None, base_model_name_or_path=None, revision=None, task_type=None, inference_mode=False)
+
+        if "peft_type" in kwargs:
+            peft_type = kwargs["peft_type"]
+            config_cls = PEFT_TYPE_TO_CONFIG_MAPPING[peft_type]
+        else:
+            config_cls = cls
+
+        return config_cls(**kwargs)
+
+    @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, subfolder: Optional[str] = None, **kwargs):
         r"""
         This method loads the configuration of your adapter model from a directory.
@@ -87,9 +129,6 @@ class PeftConfigMixin(PushToHubMixin):
             kwargs (additional keyword arguments, *optional*):
                 Additional keyword arguments passed along to the child class initialization.
         """
-        # Avoid circular dependency .. TODO: fix this with a larger refactor
-        from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
-
         path = (
             os.path.join(pretrained_model_name_or_path, subfolder)
             if subfolder is not None
@@ -109,30 +148,8 @@ class PeftConfigMixin(PushToHubMixin):
                 raise ValueError(f"Can't find '{CONFIG_NAME}' at '{pretrained_model_name_or_path}'")
 
         loaded_attributes = cls.from_json_file(config_file)
-
-        # TODO: this hack is needed to fix the following issue (on commit 702f937):
-        # if someone saves a default config and loads it back with `PeftConfig` class it yields to
-        # not loading the correct config class.
-
-        # from peft import AdaLoraConfig, PeftConfig
-        # peft_config = AdaLoraConfig()
-        # print(peft_config)
-        # >>> AdaLoraConfig(peft_type=<PeftType.ADALORA: 'ADALORA'>, auto_mapping=None, base_model_name_or_path=None,
-        # revision=None, task_type=None, inference_mode=False, r=8, target_modules=None, lora_alpha=8, lora_dropout=0.0, ...
-        #
-        # peft_config.save_pretrained("./test_config")
-        # peft_config = PeftConfig.from_pretrained("./test_config")
-        # print(peft_config)
-        # >>> PeftConfig(peft_type='ADALORA', auto_mapping=None, base_model_name_or_path=None, revision=None, task_type=None, inference_mode=False)
-        if "peft_type" in loaded_attributes:
-            peft_type = loaded_attributes["peft_type"]
-            config_cls = PEFT_TYPE_TO_CONFIG_MAPPING[peft_type]
-        else:
-            config_cls = cls
-
         kwargs = {**class_kwargs, **loaded_attributes}
-        config = config_cls(**kwargs)
-        return config
+        return cls.from_peft_type(**kwargs)
 
     @classmethod
     def from_json_file(cls, path_json_file: str, **kwargs):
@@ -213,10 +230,12 @@ class PeftConfig(PeftConfigMixin):
         inference_mode (`bool`, defaults to `False`): Whether to use the Peft model in inference mode.
     """
 
-    base_model_name_or_path: str = field(default=None, metadata={"help": "The name of the base model to use."})
-    revision: str = field(default=None, metadata={"help": "The specific model version to use."})
-    peft_type: Union[str, PeftType] = field(default=None, metadata={"help": "Peft type"})
-    task_type: Union[str, TaskType] = field(default=None, metadata={"help": "Task type"})
+    base_model_name_or_path: Optional[str] = field(
+        default=None, metadata={"help": "The name of the base model to use."}
+    )
+    revision: Optional[str] = field(default=None, metadata={"help": "The specific model version to use."})
+    peft_type: Optional[Union[str, PeftType]] = field(default=None, metadata={"help": "Peft type"})
+    task_type: Optional[Union[str, TaskType]] = field(default=None, metadata={"help": "Task type"})
     inference_mode: bool = field(default=False, metadata={"help": "Whether to use inference mode"})
 
 

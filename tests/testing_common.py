@@ -536,9 +536,8 @@ class PeftCommonTester:
         )
 
     def _test_merge_layers(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (LoraConfig, VeraConfig, IA3Config):
-            # Merge layers only supported for LoRA, VeRA and IA³
-            return
+        if issubclass(config_cls, PromptLearningConfig):
+            return  pytest.skip(f"Test not applicable for {config_cls}")
         if ("gpt2" in model_id.lower()) and (config_cls != LoraConfig):
             self.skipTest("Merging GPT2 adapters not supported for IA³ (yet)")
 
@@ -549,10 +548,6 @@ class PeftCommonTester:
         )
         model = get_peft_model(model, config)
         model = model.to(self.torch_device)
-
-        if config.peft_type not in ("IA3", "LORA", "VERA"):
-            with self.assertRaises(AttributeError):
-                model = model.merge_and_unload()
 
         dummy_input = self.prepare_inputs_for_testing()
         model.eval()
@@ -749,8 +744,11 @@ class PeftCommonTester:
         self.assertEqual(model.base_model_torch_dtype, torch.float16)
 
     def _test_training(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (IA3Config, VeraConfig, LoraConfig):
-            return
+        if issubclass(config_cls, PromptLearningConfig):
+            return pytest.skip(f"Test not applicable for {config_cls}")
+        if (config_cls == AdaLoraConfig) and ("roberta" in model_id.lower()):
+            # TODO: no gradients on the "dense" layer, other layers work, not sure why
+            self.skipTest("AdaLora with RoBERTa does not work correctly")
 
         model = self.transformers_class.from_pretrained(model_id)
         config = config_cls(
@@ -766,14 +764,7 @@ class PeftCommonTester:
         output = model(**inputs)[0]
         loss = output.sum()
         loss.backward()
-
-        if config_cls == IA3Config:
-            parameter_prefix = "ia3"
-        elif config_cls == LoraConfig:
-            parameter_prefix = "lora"
-        elif config_cls == VeraConfig:
-            parameter_prefix = "vera" if config.save_projection else "vera_lambda"
-        # parameter_prefix = "ia3" if config_cls == IA3Config else "lora"
+        parameter_prefix = model.prefix
         for n, param in model.named_parameters():
             if (parameter_prefix in n) or ("modules_to_save" in n):
                 self.assertIsNotNone(param.grad)
@@ -781,8 +772,10 @@ class PeftCommonTester:
                 self.assertIsNone(param.grad)
 
     def _test_inference_safetensors(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (LoraConfig, VeraConfig):
-            return
+        if (config_cls == PrefixTuningConfig) and ("deberta" in model_id.lower()):
+            # TODO: raises an error:
+            # TypeError: DebertaModel.forward() got an unexpected keyword argument 'past_key_values'
+            self.skipTest("DeBERTa with PrefixTuning does not work correctly")
 
         config = config_cls(
             base_model_name_or_path=model_id,
@@ -871,13 +864,12 @@ class PeftCommonTester:
         self.assertLess(nb_trainable, nb_trainable_all)
 
     def _test_training_gradient_checkpointing(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (LoraConfig, IA3Config, VeraConfig):
-            return
+        if issubclass(config_cls, PromptLearningConfig):
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
-        # TODO: fails with the following runtime error:
-        # leaf Variable that requires grad is being used in an in-place operation.
-        if config_cls == VeraConfig and "Deberta" in model_id:
-            return
+        if (config_cls == AdaLoraConfig) and ("roberta" in model_id.lower()):
+            # TODO: no gradients on the "dense" layer, other layers work, not sure why
+            self.skipTest("AdaLora with RoBERTa does not work correctly")
 
         model = self.transformers_class.from_pretrained(model_id)
 

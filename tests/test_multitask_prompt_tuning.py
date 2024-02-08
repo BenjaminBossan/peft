@@ -294,7 +294,6 @@ class MultiTaskPromptTuningTester(TestCase, PeftCommonTester):
             model = LlamaForCausalLM(self._create_test_llama_config())
             model = get_peft_model(model, config)
             model = model.to(self.torch_device)
-            print(model)
 
             input_ids = torch.LongTensor([[1, 1, 1], [2, 1, 2]]).to(self.torch_device)
             attention_mask = torch.LongTensor([[1, 1, 1], [1, 0, 1]]).to(self.torch_device)

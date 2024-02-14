@@ -715,11 +715,11 @@ class PeftCommonTester:
 
         # merging again should not change anything
         # also check warning:
-        with self.assertWarnsRegex(UserWarning, "All adapters are already merged, nothing to do"):
+        with pytest.warns(UserWarning, match="All adapters are already merged, nothing to do"):
             model.merge_adapter()
         logits_1 = model(**self.prepare_inputs_for_testing())[0]
 
-        self.assertTrue(torch.allclose(logits_0, logits_1, atol=1e-6, rtol=1e-6))
+        assert torch.allclose(logits_0, logits_1, atol=1e-6, rtol=1e-6)
 
     def _test_generate(self, model_id, config_cls, config_kwargs):
         model = self.transformers_class.from_pretrained(model_id)

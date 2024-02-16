@@ -341,7 +341,7 @@ class PeftCommonTester:
     def _test_save_pretrained_selected_adapters(self, model_id, config_cls, config_kwargs, safe_serialization=True):
         if issubclass(config_cls, (AdaLoraConfig, VeraConfig)):
             # AdaLora does not support adding more than 1 adapter
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         # ensure that the weights are randomly initialized
         if issubclass(config_cls, LoraConfig):
@@ -446,9 +446,9 @@ class PeftCommonTester:
             assert model_from_pretrained.peft_config["default"] is config
 
     def _test_merge_layers_fp16(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (LoraConfig, IA3Config, VeraConfig):
-            # Merge layers only supported for LoRA, IA³, VeRA
-            return
+        if config_cls not in (LoraConfig, IA3Config):
+            # Merge layers only supported for LoRA and IA³
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         if ("gpt2" in model_id.lower()) and (config_cls != LoraConfig):
             self.skipTest("Merging GPT2 adapters not supported for IA³ (yet)")
@@ -528,7 +528,8 @@ class PeftCommonTester:
 
     def _test_merge_layers(self, model_id, config_cls, config_kwargs):
         if issubclass(config_cls, PromptLearningConfig):
-            return  pytest.skip(f"Test not applicable for {config_cls}")
+            return pytest.skip(f"Test not applicable for {config_cls}")
+
         if ("gpt2" in model_id.lower()) and (config_cls != LoraConfig):
             self.skipTest("Merging GPT2 adapters not supported for IA³ (yet)")
 
@@ -702,8 +703,11 @@ class PeftCommonTester:
             _ = model.generate(inputs["input_ids"])
 
     def _test_generate_half_prec(self, model_id, config_cls, config_kwargs):
-        if config_cls not in (IA3Config, LoraConfig, VeraConfig, PrefixTuningConfig):
-            return
+        if config_cls not in (IA3Config, LoraConfig, PrefixTuningConfig):
+            return pytest.skip(f"Test not applicable for {config_cls}")
+
+        if self.torch_device == "mps":  # BFloat16 is not supported on MPS
+            return pytest.skip("BFloat16 is not supported on MPS")
 
         model = self.transformers_class.from_pretrained(model_id, torch_dtype=torch.bfloat16)
         config = config_cls(
@@ -721,7 +725,7 @@ class PeftCommonTester:
 
     def _test_prefix_tuning_half_prec_conversion(self, model_id, config_cls, config_kwargs):
         if config_cls not in (PrefixTuningConfig,):
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         config = config_cls(
             base_model_name_or_path=model_id,
@@ -802,7 +806,7 @@ class PeftCommonTester:
 
     def _test_training_layer_indexing(self, model_id, config_cls, config_kwargs):
         if config_cls not in (LoraConfig,):
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         config = config_cls(
             base_model_name_or_path=model_id,
@@ -865,7 +869,7 @@ class PeftCommonTester:
         model = self.transformers_class.from_pretrained(model_id)
 
         if not getattr(model, "supports_gradient_checkpointing", False):
-            return
+            return pytest.skip(f"Model {model_id} does not support gradient checkpointing")
 
         model.gradient_checkpointing_enable()
 
@@ -898,7 +902,7 @@ class PeftCommonTester:
 
     def _test_peft_model_device_map(self, model_id, config_cls, config_kwargs):
         if config_cls not in (LoraConfig,):
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         config = config_cls(
             base_model_name_or_path=model_id,
@@ -920,7 +924,7 @@ class PeftCommonTester:
 
     def _test_training_prompt_learning_tasks(self, model_id, config_cls, config_kwargs):
         if not issubclass(config_cls, PromptLearningConfig):
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         model = self.transformers_class.from_pretrained(model_id)
         config = config_cls(
@@ -950,7 +954,7 @@ class PeftCommonTester:
             **config_kwargs,
         )
         if config.peft_type not in supported_peft_types:
-            return
+            return pytest.skip(f"Test not applicable for {config.peft_type}")
 
         model = self.transformers_class.from_pretrained(model_id)
         adapter_to_delete = "delete_me"
@@ -988,7 +992,7 @@ class PeftCommonTester:
             **config_kwargs,
         )
         if config.peft_type not in supported_peft_types:
-            return
+            return pytest.skip(f"Test not applicable for {config.peft_type}")
 
         model = self.transformers_class.from_pretrained(model_id)
         adapter_to_delete = "delete_me"
@@ -1045,7 +1049,7 @@ class PeftCommonTester:
     def _test_weighted_combination_of_adapters(self, model_id, config_cls, config_kwargs):
         if issubclass(config_cls, (AdaLoraConfig, VeraConfig)):
             # AdaLora does not support adding more than 1 adapter
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         adapter_list = ["adapter1", "adapter_2", "adapter_3"]
         weight_list = [0.5, 1.5, 1.5]
@@ -1053,8 +1057,8 @@ class PeftCommonTester:
             base_model_name_or_path=model_id,
             **config_kwargs,
         )
-        if not isinstance(config, (LoraConfig)):
-            return
+        if not isinstance(config, LoraConfig):
+            return pytest.skip(f"Test not applicable for {config}")
 
         model = self.transformers_class.from_pretrained(model_id)
         model = get_peft_model(model, config, adapter_list[0])
@@ -1314,7 +1318,7 @@ class PeftCommonTester:
         # raised. Also, the peft model should not be left in a half-initialized state.
 
         if not issubclass(config_cls, (LoraConfig, AdaLoraConfig)):
-            return
+            return pytest.skip(f"Test not applicable for {config_cls}")
 
         config_kwargs = config_kwargs.copy()
         config_kwargs["bias"] = "all"

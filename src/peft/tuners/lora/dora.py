@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+import os
 from copy import deepcopy
 
 import torch
@@ -19,13 +21,14 @@ import torch.nn.functional as F
 from torch import nn
 
 from peft.utils.integrations import dequantize_module_weight, gather_params_ctx
-from peft.utils.other import transpose
+from peft.utils.other import transpose, str_to_bool
 
 
 class DoraLinearLayer(nn.Module):
     def __init__(self, fan_in_fan_out):
         super().__init__()
         self.fan_in_fan_out = fan_in_fan_out
+        self.approx_weight_norm = str_to_bool(os.environ.get("PEFT_APPROX_WEIGHT_NORM", "0"))
 
     def get_weight_norm(self, weight, lora_weight, scaling) -> torch.Tensor:
         # calculate L2 norm of weight matrix, column-wise
@@ -33,6 +36,16 @@ class DoraLinearLayer(nn.Module):
         weight = weight + scaling * lora_weight
         weight_norm = torch.linalg.norm(weight, dim=1).to(weight.dtype)
         return weight_norm
+
+    def get_weight_norm_approx(self, wn, c) -> torch.Tensor:
+        # 1st order taylor approximation around 0.5
+        k = math.sqrt(2)
+        b = wn ** 2
+        c = (c ** 2).sum(1)
+        a = k * (b + c + 0.5)
+        a = a / 2
+        a = a.to(wn.dtype)
+        return a
 
     def update_layer(self, *, base_layer, lora_A, lora_B, scaling) -> None:
         # temporarily convert fp16 to fp32, as fp16 can cause trouble on CPU with PyTorch < 2.2
@@ -60,7 +73,7 @@ class DoraLinearLayer(nn.Module):
 
         self.weight = nn.Parameter(weight_norm, requires_grad=True)
 
-    def forward(self, x, *, lora_A, lora_B, scaling, base_layer):
+    def forward(self, x, *, lora_A, lora_B, scaling, base_layer, result):
         """
         For DoRA, calculate the extra output from LoRA with DoRA applied. This should be added on top of the base layer
         output.
@@ -73,9 +86,12 @@ class DoraLinearLayer(nn.Module):
         lora_weight = lora_B(lora_A(x_eye)).T
 
         magnitude = self.weight
-        weight = dequantize_module_weight(base_layer)
-        weight = weight.to(x.dtype)
-        weight_norm = self.get_weight_norm(weight, lora_weight.detach(), scaling)
+        if self.approx_weight_norm:
+            weight_norm = self.get_weight_norm_approx(magnitude, lora_weight.detach() * scaling)
+        else:
+            weight = dequantize_module_weight(base_layer)
+            weight = weight.to(x.dtype)
+            weight_norm = self.get_weight_norm(weight, lora_weight.detach(), scaling)
         # see section 4.3 of DoRA (https://arxiv.org/abs/2402.09353)
         # "[...] we suggest treating ||V +∆V ||_c in
         # Eq. (5) as a constant, thereby detaching it from the gradient
@@ -84,9 +100,7 @@ class DoraLinearLayer(nn.Module):
         # during backpropagation"
         weight_norm = weight_norm.detach()
         mag_norm_scale = (magnitude / weight_norm).view(1, -1)
-        result_dora = (mag_norm_scale - 1) * (
-            F.linear(x, transpose(weight, self.fan_in_fan_out))
-        ) + mag_norm_scale * lora_result * scaling
+        result_dora = (mag_norm_scale - 1) * result + mag_norm_scale * lora_result * scaling
 
         # Note: Computation could potentially be accelerated by using the code below instead of calculating X@W again.
         # This is only correct if dropout=0, otherwise results will differ:

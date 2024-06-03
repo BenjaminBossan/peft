@@ -515,6 +515,7 @@ class Linear(nn.Module, LoraLayer):
                         lora_B=lora_B,
                         scaling=scaling,
                         base_layer=self.get_base_layer(),
+                        result=result,
                     )
 
             result = result.to(torch_result_dtype)

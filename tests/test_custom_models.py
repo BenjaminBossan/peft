@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # coding=utf-8
 # Copyright 2023-present the HuggingFace Inc. team.
 #
@@ -83,6 +81,7 @@ TEST_CASES = [
         LoraConfig,
         {"target_modules": "lin1", "use_dora": True, "lora_alpha": 32},
     ),
+    ("Vanilla MLP 10 LoRA with DoRA+dropout", "MLP", LoraConfig, {"target_modules": ["lin0"], "use_dora": True, "lora_dropout": 0.5}),
     ("Embedding + transformers Conv1D 1 LoRA", "EmbConv1D", LoraConfig, {"target_modules": ["conv1d"]}),
     ("Embedding + transformers Conv1D 2 LoRA", "EmbConv1D", LoraConfig, {"target_modules": ["emb"]}),
     ("Embedding + transformers Conv1D 3 LoRA", "EmbConv1D", LoraConfig, {"target_modules": ["emb", "conv1d"]}),

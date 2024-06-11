@@ -244,6 +244,7 @@ if is_bnb_available():
                             lora_B=lora_B,
                             scaling=scaling,
                             base_layer=self.get_base_layer(),
+                            base_result=result,
                         )
                     if requires_conversion:
                         output = output.to(expected_dtype)
@@ -495,6 +496,7 @@ if is_bnb_4bit_available():
                             lora_B=lora_B,
                             scaling=scaling,
                             base_layer=self.get_base_layer(),
+                            base_result=result,
                         )
                     if requires_conversion:
                         output = output.to(expected_dtype)

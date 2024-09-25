@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import warnings
+from operator import attrgetter
 from typing import Optional
 
 import huggingface_hub
@@ -582,3 +583,160 @@ def load_peft_weights(model_id: str, device: Optional[str] = None, **hf_hub_down
         adapters_weights = torch_load(filename, map_location=torch.device(device))
 
     return adapters_weights
+
+
+#########################
+# HOT SWAPPING ADAPTERS #
+#########################
+
+def hotswap_adapter_from_state_dict(model, state_dict, adapter_name):
+    """
+    Swap out the adapter weights from the model with the weights from state_dict.
+
+    As of now, only LoRA is supported.
+
+    It is assumed that the existing adapter and the new adapter are compatible, otherwise an error will be raised.
+
+    Args:
+        model: nn.Module
+            The model with the loaded adapter.
+        state_dict: dict[str, torch.Tensor]
+            The state dict of the new adapter, which needs to be compatible (targeting same modules etc.).
+
+    Raises:
+        RuntimeError
+            If the old and the new adapter are not compatible, a RuntimeError is raised.
+    """
+    # Ensure that all the keys of the new adapter correspond exactly to the keys of the old adapter, otherwise
+    # hot-swapping is not possible
+
+    parameter_prefix = "lora_"  # hard-coded for now
+    is_compiled = hasattr(model, "_orig_mod")
+    # TODO: there is probably a more precise way to identify the adapter keys
+    missing_keys = {k for k in model.state_dict() if (parameter_prefix in k) and (adapter_name in k)}
+    unexpected_keys = set()
+
+    # first: dry run, not swapping anything
+    for key, new_val in state_dict.items():
+        try:
+            old_val = attrgetter(key)(model)
+        except AttributeError:
+            unexpected_keys.add(key)
+            continue
+
+        if is_compiled:
+            missing_keys.remove("_orig_mod." + key)
+        else:
+            missing_keys.remove(key)
+
+    if missing_keys or unexpected_keys:
+        msg = "Hot swapping the adapter did not succeed."
+        if missing_keys:
+            msg += f" Missing keys: {', '.join(sorted(missing_keys))}."
+        if unexpected_keys:
+            msg += f" Unexpected keys: {', '.join(sorted(unexpected_keys))}."
+        raise RuntimeError(msg)
+
+    # actual swapping
+    for key, new_val in state_dict.items():
+        # no need to account for potential _orig_mod in key here, as torch handles that
+        old_val = attrgetter(key)(model)
+        old_val.data = new_val.data
+        # TODO: wanted to use swap_tensors but this somehow does not work on nn.Parameter
+        # torch.utils.swap_tensors(old_val.data, new_val.data)
+
+
+def _check_hotswap_configs_compatible(config0, config1):
+    # To hot-swap two adapters, their configs must be compatible. Otherwise, the results could be false. E.g. if they
+    # use different alpha values, after hot-swapping, the alphas from the first adapter would still be used with the
+    # weights from the 2nd adapter, which would result in incorrect behavior. There is probably a way to swap these
+    # values as well, but that's not implemented yet, and we need to be careful not to trigger re-compilation if the
+    # model is compiled (so no modification of the dict).
+
+    # TODO: This is a very rough check at the moment and there are probably better ways than to error out
+    config_keys_to_check = ["lora_alpha", "use_rslora", "lora_dropout", "alpha_pattern", "use_dora"]
+    config0 = config0.to_dict()
+    config1 = config1.to_dict()
+    sentinel = object()
+    for key in config_keys_to_check:
+        val0 = config0.get(key, sentinel)
+        val1 = config1.get(key, sentinel)
+        if val0 != val1:
+            raise ValueError(f"Configs are incompatible: for {key}, {val0} != {val1}")
+
+
+def hotswap_adapter(model, model_name_or_path, adapter_name, torch_device=None, **kwargs):
+    """Substitute old adapter data with new adapter data, keeping the rest the same.
+
+    As of now, only LoRA is supported.
+
+    This function is useful when you want to replace the loaded adapter with a new adapter. The adapter name will remain
+    the same, but the weights and other parameters will be swapped out.
+
+    If the adapters are incomptabile, e.g. targeting different layers or having different alpha values, an error will be
+    raised.
+
+    Args:
+        model ([`~PeftModel`]):
+            The PEFT model with the loaded adapter.
+        model_name_or_path (`str`):
+            The name or path of the model to load the new adapter from.
+        adapter_name (`str`):
+            The name of the adapter to swap.
+        torch_device: (`str`, *optional*, defaults to None):
+            The device to load the new adapter onto.
+        **kwargs (`optional`):
+            Additional keyword arguments.
+
+    """
+    from peft.config import PeftConfig
+    from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+    from peft.utils import infer_device, load_peft_weights
+
+    if torch_device is None:
+        torch_device = infer_device()
+
+    ############################
+    # LOAD CONFIG AND VALIDATE #
+    ############################
+
+    config_cls = PEFT_TYPE_TO_CONFIG_MAPPING[
+        PeftConfig._get_peft_type(
+            model_name_or_path,
+            subfolder=kwargs.get("subfolder", None),
+            revision=kwargs.get("revision", None),
+            cache_dir=kwargs.get("cache_dir", None),
+            use_auth_token=kwargs.get("use_auth_token", None),
+            token=kwargs.get("token", None),
+        )
+    ]
+    new_config = config_cls.from_pretrained(model_name_or_path, **kwargs)
+    # config keys that could affect the model output besides what is determined by the state_dict
+    _check_hotswap_configs_compatible(model.active_peft_config, new_config)
+
+    state_dict = load_peft_weights(model_name_or_path, device=torch_device, **kwargs)
+
+    ###########################
+    # LOAD & REMAP STATE_DICT #
+    ###########################
+
+    peft_model_state_dict = {}
+    # TODO: don't hard-code LoRA
+    parameter_prefix = "lora_"
+    for k, v in state_dict.items():
+        if parameter_prefix in k:
+            suffix = k.split(parameter_prefix)[1]
+            if "." in suffix:
+                suffix_to_replace = ".".join(suffix.split(".")[1:])
+                k = k.replace(suffix_to_replace, f"{adapter_name}.{suffix_to_replace}")
+            else:
+                k = f"{k}.{adapter_name}"
+            peft_model_state_dict[k] = v
+        else:
+            peft_model_state_dict[k] = v
+
+    hotswap_adapter_from_state_dict(
+        model=model,
+        state_dict=peft_model_state_dict,
+        adapter_name=adapter_name,
+    )

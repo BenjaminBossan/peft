@@ -33,6 +33,9 @@ from .other import (
     infer_device,
 )
 from .peft_types import PeftType
+from peft.config import PeftConfig
+from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+from peft.utils import infer_device, load_peft_weights
 
 
 def has_valid_embedding_base_layer(layer):
@@ -689,10 +692,6 @@ def hotswap_adapter(model, model_name_or_path, adapter_name, torch_device=None, 
             Additional keyword arguments.
 
     """
-    from peft.config import PeftConfig
-    from peft.mapping import PEFT_TYPE_TO_CONFIG_MAPPING
-    from peft.utils import infer_device, load_peft_weights
-
     if torch_device is None:
         torch_device = infer_device()
 
@@ -723,17 +722,17 @@ def hotswap_adapter(model, model_name_or_path, adapter_name, torch_device=None, 
     peft_model_state_dict = {}
     # TODO: don't hard-code LoRA
     parameter_prefix = "lora_"
-    for k, v in state_dict.items():
-        if parameter_prefix in k:
-            suffix = k.split(parameter_prefix)[1]
+    for key, val in state_dict.items():
+        if parameter_prefix in key:
+            suffix = key.split(parameter_prefix)[1]
             if "." in suffix:
                 suffix_to_replace = ".".join(suffix.split(".")[1:])
-                k = k.replace(suffix_to_replace, f"{adapter_name}.{suffix_to_replace}")
+                key = key.replace(suffix_to_replace, f"{adapter_name}.{suffix_to_replace}")
             else:
-                k = f"{k}.{adapter_name}"
-            peft_model_state_dict[k] = v
+                key = f"{key}.{adapter_name}"
+            peft_model_state_dict[key] = val
         else:
-            peft_model_state_dict[k] = v
+            peft_model_state_dict[key] = val
 
     hotswap_adapter_from_state_dict(
         model=model,

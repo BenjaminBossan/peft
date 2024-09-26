@@ -27,6 +27,7 @@ from transformers import AutoModelForCausalLM
 
 from peft import (
     AdaLoraConfig,
+    IA3Config,
     LoraConfig,
     PeftMixedModel,
     PeftModel,
@@ -44,6 +45,7 @@ from peft import (
     set_peft_model_state_dict,
 )
 from peft.utils import infer_device
+from peft.utils.hotswap import hotswap_adapter
 
 
 class TestLoraInitialization:
@@ -1512,3 +1514,77 @@ class TestLowCpuMemUsage:
 
         assert device_set_low_cpu_mem == device_set_not_low_cpu_mem
         assert torch.allclose(logits_low_cpu_mem, logits_not_low_cpu_mem)
+
+
+class TestHotSwapping:
+    """TODO"""
+    torch_device = infer_device()
+
+    def compile(self, model, do_compile):
+        if not do_compile:
+            return model
+        return torch.compile(model)
+
+    # this works with all adapters except prompt learning, but we don't test all
+    # as it is unnecessary and would be slow
+    @pytest.mark.parametrize("config", [LoraConfig(init_lora_weights=0), IA3Config(init_ia3_weights=False)])
+    @pytest.mark.parametrize("do_compile", [False, True])
+    def test_hotswap(self, config, do_compile, tmp_path):
+        # TODO: probably better to use a small custom model
+        model_id = "peft-internal-testing/tiny-OPTForCausalLM-lora"
+        atol, rtol = 1e-4, 1e-4
+        inputs = torch.arange(10).view(-1, 1).to(self.torch_device)
+
+        # create adapter 0
+        model = AutoModelForCausalLM.from_pretrained(model_id).to(self.torch_device)
+        torch.manual_seed(0)
+        model = get_peft_model(model, config)
+        model = self.compile(model, do_compile=do_compile)
+        model.eval()
+        with torch.inference_mode():
+            output0 = model(inputs).logits
+        model.save_pretrained(tmp_path / "adapter0")
+
+        del model
+
+        # create adapter 1
+        model = AutoModelForCausalLM.from_pretrained(model_id).to(self.torch_device)
+        torch.manual_seed(1)
+        model = get_peft_model(model, config)
+        model = self.compile(model, do_compile=do_compile)
+        model.eval()
+        with torch.inference_mode():
+            output1 = model(inputs).logits
+        model.save_pretrained(tmp_path / "adapter1")
+
+        # sanity check: they're not hte same
+        assert not torch.allclose(output0, output1, atol=atol, rtol=rtol)
+
+        del model
+
+        # load adapter 0
+        model = AutoModelForCausalLM.from_pretrained(model_id).to(self.torch_device)
+        model = PeftModel.from_pretrained(model, tmp_path / "adapter0")
+        model = self.compile(model, do_compile=do_compile)
+        with torch.inference_mode():
+            output_loaded0 = model(inputs).logits
+
+        # sanity check: same output after loading for adapter 0
+        assert torch.allclose(output0, output_loaded0, atol=atol, rtol=rtol)
+
+
+        # hotswap with adapter 1
+        hotswap_adapter(model, tmp_path / "adapter1", adapter_name="default")
+        with torch.inference_mode():
+            output_loaded1 = model(inputs).logits
+
+        # real check: model now behaves like adapter 1
+        assert torch.allclose(output1, output_loaded1, atol=atol, rtol=rtol)
+
+        # hotswap back to adapter 0
+        hotswap_adapter(model, tmp_path / "adapter0", adapter_name="default")
+        with torch.inference_mode():
+            output_loaded_back0 = model(inputs).logits
+
+        # real check: model now behaves again like adapter 0
+        assert torch.allclose(output0, output_loaded_back0, atol=atol, rtol=rtol)

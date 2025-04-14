@@ -47,7 +47,7 @@ def filter_data(task_name, model_id, df):
 
 # Compute the Pareto frontier for two selected metrics.
 def compute_pareto_frontier(df, metric_x, metric_y):
-    if df.empty:
+    if len(df) < 2:
         return df
 
     df = df.copy()
@@ -180,8 +180,54 @@ def export_csv(df):
     return tmp_path
 
 
+def apply_dataframe_style(df, metric_preferences):
+    # df = df.copy()
+
+    def format_memory(x):
+        # Convert a number in bytes to a human-readable format.
+        # Here we always display 4 decimals for consistency.
+        try:
+            x = float(x)
+        except (ValueError, TypeError):
+            return x
+        for unit in ["B", "KB", "MB", "GB", "TB"]:
+            if x < 1024:
+                # For bytes, no decimals; otherwise, 4 decimal points.
+                return f"{x:.2f} {unit}" if unit != "B" else f"{int(x):,} {unit}"
+            x /= 1024
+        return f"{x:.4f} TB"
+
+    styled = df.style.format(
+        {
+            "test_loss": lambda x: f"{x:.4f}",
+            "test_accuracy": lambda x: f"{x:.4f}",
+            "total_time": lambda x: f"{x:,}",
+            "train_time": lambda x: f"{x:,}",
+            "train_samples": lambda x: f"{x:,}",
+            "train_total_tokens": lambda x: f"{x:,}",
+            "file_size": format_memory,
+            "cuda_memory_max": format_memory,
+            "cuda_memory_reserved_99th": format_memory,
+            "cuda_memory_reserved_avg": format_memory,
+        }
+    )
+
+    # Highlight the best values per metric based on metric_preferences.
+    # For 'higher' metrics, highlight the maximum; for 'lower', the minimum.
+    for col, pref in metric_preferences.items():
+        if col in df.columns:
+            if pref == "higher":
+                styled = styled.highlight_max(subset=[col], color="darkgreen")
+            else:
+                styled = styled.highlight_min(subset=[col], color="darkgreen")
+
+    return styled
+
+
 def build_app(df):
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
+        df_with_style = apply_dataframe_style(df, metric_preferences)
+
         gr.Markdown("# PEFT method comparison")
         gr.Markdown(
             "Find more information [on the PEFT GitHub repo](https://github.com/huggingface/peft/tree/main/method_comparison)"
@@ -201,7 +247,11 @@ def build_app(df):
                 label="Select Model ID", choices=get_model_ids(sorted(df["task_name"].unique())[0], df)
             )
 
-        data_table = gr.DataFrame(label="Results", value=df, interactive=False)
+        column_widths = ["250px" for _ in df]
+        column_widths[0] = "400px"  # experiment name
+        data_table = gr.DataFrame(
+            label="Results", value=df_with_style, interactive=False, min_width=5, column_widths=column_widths
+        )
 
         with gr.Row():
             filter_textbox = gr.Textbox(

@@ -1386,11 +1386,33 @@ class BaseTunerLayer(ABC):
             if any(p.device == meta for p in adapter_layer.parameters()):
                 continue
 
-            # TODO: weight is not necessarily defined here, leading to a NameError, fix that
-            if weight.dtype.is_floating_point or weight.dtype.is_complex:
-                adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device, dtype=dtype)
-            else:
-                adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device)
+            mode = int(os.environ["PEFT_DEVICE_MODE"])
+            assert mode in (0, 1, 2), "PEFT_DEVICE_MODE must be 0 or 1 or 2"
+
+            if mode == 0:  # normal
+                if weight.dtype.is_floating_point or weight.dtype.is_complex:
+                    adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device, dtype=dtype)
+                else:
+                    adapter_layer[adapter_name] = adapter_layer[adapter_name].to(device)
+
+            elif mode == 1:  # non blocking
+                kwargs = {"device": device, "non_blocking": True}
+                if weight.dtype.is_floating_point or weight.dtype.is_complex:
+                    kwargs["dtype"] = dtype
+                adapter_layer[adapter_name] = adapter_layer[adapter_name].to(**kwargs)
+
+            elif mode == 2:  # pin memory + non blocking
+                try:
+                    next(iter(adapter_layer[adapter_name].parameters()))  # skip modules without params
+                except StopIteration:
+                    continue
+                kwargs = {"device": device, "non_blocking": True}
+                if weight.dtype.is_floating_point or weight.dtype.is_complex:
+                    kwargs["dtype"] = dtype
+                adapter_layer[adapter_name].weight.data = (
+                    adapter_layer[adapter_name].weight.data.pin_memory().to(**kwargs)
+                )
+                # TODO: bias
 
     @overload
     def _cast_input_dtype(self, x: None, dtype: torch.dtype) -> None: ...

@@ -41,11 +41,21 @@ from peft import PeftConfig, get_peft_model
 from peft.optimizers import create_lorafa_optimizer, create_loraplus_optimizer
 from peft.utils import SAFETENSORS_WEIGHTS_NAME, infer_device
 
+from accelerate.utils import is_xpu_available
 
 device = infer_device()
 
-if device not in ["cuda", "xpu"]:
-    raise RuntimeError("CUDA or XPU is not available, currently only CUDA or XPU is supported")
+#if device not in ["cuda", "xpu"]:
+#    raise RuntimeError("CUDA or XPU is not available, currently only CUDA or XPU is supported")
+
+if torch.cuda.is_available():
+    device = "cuda"
+elif is_xpu_available():
+    device = "xpu"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
 
 ACCELERATOR_MEMORY_INIT_THRESHOLD = 500 * 2**20  # 500MB
 FILE_NAME_DEFAULT_TRAIN_PARAMS = os.path.join(os.path.dirname(__file__), "default_training_params.json")
@@ -152,19 +162,32 @@ def get_train_config(path: str) -> TrainConfig:
 def init_accelerator() -> int:
     torch_accelerator_module = getattr(torch, device, torch.cuda)
     torch.manual_seed(0)
-    torch_accelerator_module.reset_peak_memory_stats()
-    torch_accelerator_module.manual_seed_all(0)
+    if hasattr(torch_accelerator_module, "reset_peak_memory_stats"):
+        torch_accelerator_module.reset_peak_memory_stats()
+    if hasattr(torch_accelerator_module, "manual_seed_all"):
+        torch_accelerator_module.manual_seed_all(0)
+    else:
+        torch_accelerator_module.manual_seed(0)
     nn.Linear(1, 1).to(device)
 
-    accelerator_memory_init = torch_accelerator_module.max_memory_reserved()
+    if hasattr(torch_accelerator_module, "max_memory_reserved"):
+        accelerator_memory_init = torch_accelerator_module.max_memory_reserved()
+    else:
+        accelerator_memory_init = 0
+
     if accelerator_memory_init > ACCELERATOR_MEMORY_INIT_THRESHOLD:
         raise RuntimeError(
             f"{device} memory usage at start is too high: {accelerator_memory_init // 2**20}MB, "
             f"please ensure that no other processes are running on {device}."
         )
 
-    torch_accelerator_module.reset_peak_memory_stats()
-    accelerator_memory_init = torch_accelerator_module.max_memory_reserved()
+    if hasattr(torch_accelerator_module, "reset_peak_memory_stats"):
+        torch_accelerator_module.reset_peak_memory_stats()
+    
+    if hasattr(torch_accelerator_module, "max_memory_reserved"):
+        accelerator_memory_init = torch_accelerator_module.max_memory_reserved()
+    else:
+        accelerator_memory_init = 0
     return accelerator_memory_init
 
 

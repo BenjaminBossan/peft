@@ -1,7 +1,7 @@
 {
   "alpha_pattern": {},
   "auto_mapping": null,
-  "base_model_name_or_path": "black-forest-labs/FLUX.2-klein-base-4B",
+  "base_model_name_or_path": "CompVis/stable-diffusion-v1-4",
   "bias": "none",
   "exclude_modules": null,
   "fan_in_fan_out": false,

@@ -1,12 +1,11 @@
 {
+  "model_id": "CompVis/stable-diffusion-v1-4",
   "max_steps": 300,
   "eval_steps": 100,
+  "batch_size": 1,
+  "dtype": "float32",
   "optimizer_kwargs": {
     "lr": 0.00005,
     "weight_decay": 0.01
-  },
-  "model_name": "CompVis/stable-diffusion-v1-4-distilled",
-  "batch_size": 1,
-  "precision": "fp16",
-  "gradient_checkpointing": true
+  }
 }

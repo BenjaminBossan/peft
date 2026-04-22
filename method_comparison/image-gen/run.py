@@ -557,6 +557,7 @@ def main(*, path_experiment: str, experiment_name: str, clean: bool) -> None:
         compile=train_config.compile,
         peft_config=peft_config,
         autocast_adapter_dtype=train_config.autocast_adapter_dtype,
+        use_gc=train_config.use_gc,
     )
     print_verbose(pipeline.transformer)
 

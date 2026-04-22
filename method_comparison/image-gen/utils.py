@@ -77,6 +77,7 @@ class TrainConfig:
         max_steps: The maximum number of steps to train
         eval_steps: The number of steps between evaluations
         compile: Whether to compile the model
+        use_gc: Whether to use gradient checkpointing.
         seed: The random seed
         grad_norm_clip: The gradient norm clipping value (set to 0 to skip)
         optimizer_type: The name of a torch optimizer (e.g. AdamW) or a PEFT method ("lora+", "lora-fa")
@@ -113,6 +114,7 @@ class TrainConfig:
     max_steps: int
     eval_steps: int
     compile: bool
+    use_gc: bool
     seed: int
     grad_norm_clip: float
     optimizer_type: str
@@ -223,10 +225,13 @@ def get_pipeline(
     compile: bool,
     peft_config: Optional[PeftConfig],
     autocast_adapter_dtype: bool,
+    use_gc: bool,
 ):
     torch_dtype = get_torch_dtype(dtype)
     pipeline = Flux2KleinPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
     pipeline.set_progress_bar_config(disable=True)
+    if use_gc:
+        pipeline.transformer.enable_gradient_checkpointing()
 
     pipeline.vae.requires_grad_(False)
     pipeline.text_encoder.requires_grad_(False)

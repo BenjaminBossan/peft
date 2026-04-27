@@ -33,7 +33,7 @@ Run one experiment:
 python run.py -v experiments/lora/flux2-klein-rank16/
 ```
 
-By default, the adapter will be saved in a temporary file for further inspection if needed. The prevent this, add the `--clean` flag to the call. To upload the model checkpoint and sample images to a Hugging Face Hub Bucket, pass the `--bucket_name your_user/my_bucket_name` argument.
+By default, the adapter will be saved in a temporary file for further inspection if needed. To prevent this, add the `--clean` flag to the call. To upload the model checkpoint and sample images to a Hugging Face Hub Bucket, pass the `--bucket_name your_user/my_bucket_name` argument.
 
 ### Running all pending experiments
 
@@ -64,9 +64,9 @@ config = LoraConfig(...)
 config.save_pretrained(<path-to-experiment>)
 ```
 
-### `training_parameters.json`
+### `training_params.json`
 
-There is a default file for the non-PEFT parameters: `default_training_params.json`. This contains all the other parameters that are relevant for training, e.g. the base model id, number of steps, batch size, learning rate, etc. If parameters that differ from the defaults are needed for a specific experiment, place a `training_parameters.json` into the experiment directory and adjust the parameters that need changing. The other parametes are taken from the aforementioned default config.
+There is a default file for the non-PEFT parameters: `default_training_params.json`. This contains all the other parameters that are relevant for training, e.g. the base model id, number of steps, batch size, learning rate, etc. If parameters that differ from the defaults are needed for a specific experiment, place a `training_params.json` into the experiment directory and adjust the parameters that need changing. The other parameters are taken from the aforementioned default config.
 
 For an overview of all possible arguments, you can also check the `TrainConfig` `dataclass` in `utils.py`.
 

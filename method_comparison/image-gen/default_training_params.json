@@ -21,7 +21,6 @@
   "lr_scheduler": null,
   "use_amp": false,
   "autocast_adapter_dtype": true,
-  "instance_prompts": "a photo of sks cat",
   "image_column": "image",
   "valid_size": 2,
   "test_size": 4,

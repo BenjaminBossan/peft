@@ -23,7 +23,7 @@ import pandas as pd
 def _preprocess_common(row):
     """Extract fields common to all tasks from a single result row.
 
-    Returns (dct, train_metrics, peft_type) or None if the row should be skipped.
+    Returns a tuple of metainfo dict and train metrics, or None if the row should be skipped.
     """
     run_info = row["run_info"]
     train_info = row["train_info"]

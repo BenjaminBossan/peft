@@ -423,6 +423,7 @@ class TrainResult:
     status: TrainStatus
     train_time: float
     accelerator_memory_reserved_log: list[int]
+    accelerator_memory_max_train: int
     losses: list[float]
     metrics: list[Any]
     error_msg: str
@@ -505,7 +506,6 @@ def log_results(
     *,
     experiment_name: str,
     train_result: TrainResult,
-    accelerator_memory_init: int,
     time_total: float,
     file_size: int,
     model_info: Optional[huggingface_hub.ModelInfo],
@@ -515,8 +515,6 @@ def log_results(
     peft_config: Optional[PeftConfig],
     print_fn: Callable[..., None],
 ) -> None:
-    torch_accelerator_module = getattr(torch, device, torch.cuda)
-    accelerator_memory_final = torch_accelerator_module.max_memory_reserved()
     if train_result.accelerator_memory_reserved_log:
         accelerator_memory_avg = int(
             sum(train_result.accelerator_memory_reserved_log) / len(train_result.accelerator_memory_reserved_log)
@@ -574,7 +572,7 @@ def log_results(
         },
         "train_info": {
             "accelerator_memory_reserved_avg": accelerator_memory_avg,
-            "accelerator_memory_max": (accelerator_memory_final - accelerator_memory_init),
+            "accelerator_memory_max": train_result.accelerator_memory_max_train,
             "accelerator_memory_reserved_99th": accelerator_memory_reserved_99th,
             "train_time": train_result.train_time,
             "file_size": file_size,

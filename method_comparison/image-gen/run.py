@@ -68,7 +68,6 @@ from peft import PeftConfig, PeftModel
 from peft.utils import CONFIG_NAME, infer_device
 
 
-ACCELERATOR_EMPTY_CACHE_SCHEDULE = 25
 os.environ["TORCHINDUCTOR_FORCE_DISABLE_CACHES"] = "1"
 
 
@@ -313,7 +312,11 @@ def train(
         device_type=device_type,
     )
 
+    torch_accelerator_module.empty_cache()
+    torch_accelerator_module.reset_peak_memory_stats()
+    accelerator_memory_max_train = 0
     try:
+        torch_accelerator_module.reset_peak_memory_stats()
         pbar = tqdm(range(1, train_config.max_steps + 1))
         for step in pbar:
             tic = time.perf_counter()
@@ -399,6 +402,15 @@ def train(
             durations.append(toc - tic)
 
             if step % train_config.eval_steps == 0:
+                # Measure max memory _before_ executing the eval loop and reset stats _after_ the eval loop. This way
+                # the extra memory required for evaluation is not included in the max memory statistic. We want to
+                # measure only the training memory, as the eval requires extra memory (DINO model) not caused by the
+                # PEFT method.
+                accelerator_memory_max_train = max(
+                    accelerator_memory_max_train,
+                    torch_accelerator_module.max_memory_reserved() - accelerator_memory_init,
+                )
+
                 tic_eval = time.perf_counter()
                 loss_avg = sum(losses[-train_config.eval_steps :]) / train_config.eval_steps
                 loss_avg = loss_avg.item()
@@ -453,9 +465,13 @@ def train(
                 }
                 print_verbose(json.dumps(log_dict))
 
-            if step % ACCELERATOR_EMPTY_CACHE_SCHEDULE == 0:
                 torch_accelerator_module.empty_cache()
+                torch_accelerator_module.reset_peak_memory_stats()
 
+        accelerator_memory_max_train = max(
+            accelerator_memory_max_train,
+            torch_accelerator_module.max_memory_reserved() - accelerator_memory_init,
+        )
         print_verbose(f"Training finished after {train_config.max_steps} steps, evaluation on test set follows.")
         transformer.eval()
         test_similarity = evaluate(
@@ -502,6 +518,7 @@ def train(
         status=status,
         train_time=train_time,
         accelerator_memory_reserved_log=accelerator_memory_reserved_log,
+        accelerator_memory_max_train=accelerator_memory_max_train,
         losses=[loss.item() for loss in losses],
         metrics=metrics,
         error_msg=error_msg,
@@ -587,7 +604,6 @@ def main(*, path_experiment: str, experiment_name: str, clean: bool, bucket_name
     log_results(
         experiment_name=experiment_name,
         train_result=train_result,
-        accelerator_memory_init=accelerator_memory_init,
         time_total=time_total,
         file_size=file_size,
         model_info=model_info,

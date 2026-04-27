@@ -9,6 +9,8 @@ This benchmark mirrors the structure of [`method_comparison/MetaMathQA`](https:/
 - memory usage
 - checkpoint size
 
+Note that for max memory reserved, this benchmark measures the memory only for the training part, not the evaluation. This is because evaluation requires extra memory (for running the DINO model) which should not be attributed to the corresponding PEFT method.
+
 ## Setup choices
 
 - Base model: [`black-forest-labs/FLUX.2-klein-base-4B`](https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B)

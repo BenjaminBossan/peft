@@ -16,6 +16,8 @@ This benchmark mirrors the structure of [`method_comparison/MetaMathQA`](https:/
 
 ## Running
 
+### Experiment settings
+
 Create an experiment under `experiments/<peft-method>/<experiment-name>/` or use one of the experiments there.
 
 Each experiment directory may contain:
@@ -23,19 +25,27 @@ Each experiment directory may contain:
 - `adapter_config.json` (optional; if missing, full fine-tuning is used)
 - `training_params.json` (optional; overrides `default_training_params.json`)
 
+### Running a single experiment
+
 Run one experiment:
 
 ```sh
 python run.py -v experiments/lora/flux2-klein-rank16/
 ```
 
-Run all experiments:
+By default, the adapter will be saved in a temporary file for further inspection if needed. The prevent this, add the `--clean` flag to the call. To upload the model checkpoint and sample images to a Hugging Face Hub Bucket, pass the `--bucket_name your_user/my_bucket_name` argument.
+
+### Running all pending experiments
+
+The Makefile checks which experiments are missing a corresponding results file and runs those experiments. Note that running a whole sweep can easily take many hours.
 
 ```sh
 make
 ```
 
-List experiments:
+If you set `UPLOAD_BUCKET="your_user/bucket_name"` as an environment variable prior to starting experiments via `make`, all experiments will be called with the `--bucket_name $UPLOAD_BUCKET` parameter and therefore store the checkpoints and sample images in that bucket.
+
+List experiments to run:
 
 ```sh
 make list

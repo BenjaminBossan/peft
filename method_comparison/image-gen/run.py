@@ -29,6 +29,7 @@ from contextlib import AbstractContextManager, nullcontext
 from functools import partial
 from typing import Any, Optional
 
+import huggingface_hub
 import torch
 from diffusers.training_utils import (
     compute_density_for_timestep_sampling,
@@ -57,6 +58,8 @@ from utils import (
     get_train_config,
     init_accelerator,
     log_results,
+    upload_checkpoint_to_bucket,
+    upload_images_to_bucket,
     validate_experiment_path,
 )
 
@@ -526,7 +529,7 @@ def generate_sample_images(
             outputs.images[0].save(image_path)
 
 
-def main(*, path_experiment: str, experiment_name: str, clean: bool) -> None:
+def main(*, path_experiment: str, experiment_name: str, clean: bool, bucket_name: Optional[str]) -> None:
     tic_total = time.perf_counter()
     start_date = dt.datetime.now(tz=dt.timezone.utc).replace(microsecond=0).isoformat()
 
@@ -606,6 +609,11 @@ def main(*, path_experiment: str, experiment_name: str, clean: bool) -> None:
         except Exception as exc:
             print_verbose(f"Sample image generation failed: {exc}")
 
+    if bucket_name:
+        huggingface_hub.create_bucket(bucket_name, exist_ok=True)
+        upload_checkpoint_to_bucket(pipeline.transformer, experiment_name, bucket_name)
+        upload_images_to_bucket(bucket_name)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -616,6 +624,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Delete training artifacts after run finishes (logs are still saved)",
     )
+    parser.add_argument("--bucket_name", type=str, help="HF bucket to upload checkpoints and images to.")
     args = parser.parse_args()
 
     experiment_name = validate_experiment_path(args.path_experiment)
@@ -634,4 +643,5 @@ if __name__ == "__main__":
         path_experiment=args.path_experiment,
         experiment_name=experiment_name,
         clean=args.clean,
+        bucket_name=args.bucket_name,
     )

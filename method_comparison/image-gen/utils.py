@@ -287,6 +287,30 @@ def get_optimizer_and_scheduler(
     return optimizer, lr_scheduler
 
 
+def upload_checkpoint_to_bucket(model: nn.Module, experiment_name: str, bucket_name: str):
+    """Uploads model checkpoint to Hugging Face Bucket"""
+    try:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True, delete=True) as tmp_dir:
+            model.save_pretrained(tmp_dir)
+            huggingface_hub.batch_bucket_files(
+                bucket_name,
+                add=[
+                    (os.path.join(tmp_dir, fname), f"checkpoints/{experiment_name}/{fname}")
+                    for fname in os.listdir(tmp_dir)
+                ],
+            )
+    except Exception as exc:
+        print(f"Failed to upload model checkpoint to hub: {exc}")
+
+
+def upload_images_to_bucket(bucket_name: str):
+    """Syncs test images (only main runs) with Hugging Face Bucket"""
+    try:
+        huggingface_hub.sync_bucket(SAMPLE_IMAGE_PATH, f"hf://buckets/{bucket_name}/sample-images", delete=False)
+    except Exception as exc:
+        print(f"Failed to upload sample images to hub: {exc}")
+
+
 def get_file_size(
     transformer: nn.Module, *, peft_config: Optional[PeftConfig], clean: bool, print_fn: Callable[..., None]
 ) -> int:

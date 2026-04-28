@@ -47,7 +47,7 @@ def _find_cutoff_index(S: torch.Tensor, threshold: float) -> int:
 
 @torch.no_grad()
 def _convert_module_to_lora(
-    module: BaseTunerLayer, rank: int | float, adapter_name: str = "default"
+    module: BaseTunerLayer, rank: float, adapter_name: str = "default"
 ) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Convert a single BaseTunerLayer's adapter weight to a LoRA weight, return A, B, and the effective rank."""
     delta_weight = module.get_delta_weight(adapter_name)
@@ -80,7 +80,7 @@ def _convert_module_to_lora(
 
 def convert_to_lora(
     model: torch.nn.Module,
-    rank: int | float,
+    rank: float,
     adapter_name: str = "default",
     progressbar: bool = False,
     compile_kwargs=None,
@@ -298,7 +298,7 @@ def convert_to_lora(
 def save_as_lora(
     path: str | os.PathLike,
     model: torch.nn.Module,
-    rank: int | float,
+    rank: float,
     adapter_name: str = "default",
     progressbar: bool = False,
     compile_kwargs=None,

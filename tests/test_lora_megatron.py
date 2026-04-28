@@ -21,7 +21,7 @@ import unittest
 
 import pytest
 import torch
-import torch.nn.init as init
+from torch.nn import init
 from transformers import AutoModelForCausalLM
 
 from peft import LoraConfig, PeftModel, get_peft_model, get_peft_model_state_dict

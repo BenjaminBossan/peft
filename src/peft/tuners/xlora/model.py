@@ -19,7 +19,7 @@ from functools import partial
 from typing import Optional, Union
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from peft.tuners.lora.layer import LoraLayer
 from peft.tuners.lora.model import LoraModel

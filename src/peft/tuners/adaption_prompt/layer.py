@@ -16,8 +16,8 @@ import math
 from typing import Optional, Union
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 from .config import TRANSFORMERS_MODEL_CONFIG
 

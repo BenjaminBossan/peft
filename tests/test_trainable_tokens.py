@@ -528,7 +528,7 @@ class TestTrainableTokens:
         # same as test_stand_alone_raises_target_layer_not_found but tests the peft method integration
         with pytest.raises(ValueError) as e:
             model = get_peft_model(model, peft_config)
-        assert f"Target modules {{{repr(target_layer_name)}}} not found in the base model." in str(e)
+        assert f"Target modules {{{target_layer_name!r}}} not found in the base model." in str(e)
 
     def test_multiple_targets(self, model_multi_embedding):
         # tests the ability of targeting two modules with the same token indices

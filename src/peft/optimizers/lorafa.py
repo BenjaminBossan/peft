@@ -22,9 +22,8 @@ import math
 from collections.abc import Callable, Iterable
 
 import torch
-import torch.nn as nn
 from accelerate.utils.imports import is_bf16_available
-from torch import autocast
+from torch import autocast, nn
 from torch.optim import Optimizer
 
 from ..peft_model import PeftModel

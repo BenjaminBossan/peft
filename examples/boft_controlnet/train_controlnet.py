@@ -395,7 +395,7 @@ def main(args):
         initial_global_step = 0
 
     progress_bar = tqdm(
-        range(0, args.max_train_steps),
+        range(args.max_train_steps),
         initial=initial_global_step,
         desc="Steps",
         disable=not accelerator.is_local_main_process,

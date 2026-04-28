@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from peft.config import PeftConfig
 
@@ -249,9 +249,7 @@ class LycorisTuner(BaseTuner):
         else:
             target_base_layer = target
 
-        if isinstance(target_base_layer, (torch.nn.Conv2d, torch.nn.Conv1d)):
-            new_module = new_module_cls(target, adapter_name=adapter_name, config=config, **kwargs)
-        elif isinstance(target_base_layer, torch.nn.Linear):
+        if isinstance(target_base_layer, (torch.nn.Conv2d, torch.nn.Conv1d)) or isinstance(target_base_layer, torch.nn.Linear):
             new_module = new_module_cls(target, adapter_name=adapter_name, config=config, **kwargs)
         else:
             supported_modules = ", ".join(layer.__name__ for layer in cls.layers_mapping.keys())

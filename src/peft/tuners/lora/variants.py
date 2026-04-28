@@ -673,8 +673,7 @@ def calculate_alora_offsets(
                 idx = start_idx_tensor.item()
                 if idx + invocation_len <= seq_len:
                     if torch.equal(sequence[idx : idx + invocation_len], current_invocation_ids_tensor):
-                        if idx > best_match_start_idx:
-                            best_match_start_idx = idx
+                        best_match_start_idx = max(best_match_start_idx, idx)
 
             if best_match_start_idx != -1:
                 offset_val = seq_len - best_match_start_idx

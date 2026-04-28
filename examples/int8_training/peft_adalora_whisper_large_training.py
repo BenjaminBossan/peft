@@ -402,7 +402,7 @@ def evaluation_loop(model, eval_dataloader, processor, normalizer, metric, force
     eval_metrics = {"eval/wer": wer, "eval/normalized_wer": normalized_wer}
     if accelerator.get_tracker("wandb"):
         sample_size = min(len(predictions), 256)
-        ids = [randint(0, len(predictions) - 1) for p in range(0, sample_size)]
+        ids = [randint(0, len(predictions) - 1) for p in range(sample_size)]
         sample_predictions = [predictions[i] for i in ids]
         sample_references = [references[i] for i in ids]
         sample_normalized_predictions = [normalized_predictions[i] for i in ids]

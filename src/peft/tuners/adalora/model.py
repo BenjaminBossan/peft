@@ -330,7 +330,7 @@ class AdaLoraModel(LoraModel):
             self.rankallocator.mask_using_rank_pattern(self.model, lora_config.rank_pattern)
         # Pass the function and do forward propagation
         else:
-            return None
+            return
 
     def add_weighted_adapter(self, *args, **kwargs):
         """This method is not supported for AdaLoRA, use LoRA instead."""

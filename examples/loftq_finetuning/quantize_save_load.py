@@ -16,7 +16,7 @@ import argparse
 import os
 
 import torch
-import torch.nn as nn
+from torch import nn
 from transformers import (
     AutoModelForCausalLM,
     AutoModelForSeq2SeqLM,

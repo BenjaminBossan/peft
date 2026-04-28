@@ -340,8 +340,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -551,8 +551,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             tokenizer = AutoTokenizer.from_pretrained(self.causal_lm_model_id)
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -961,8 +961,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -1079,8 +1079,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -1435,8 +1435,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = VeraConfig(
                 r=16,
@@ -1495,8 +1495,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = PveraConfig(
                 r=16,
@@ -1555,8 +1555,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = VeraConfig(
                 r=16,
@@ -1615,8 +1615,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = PveraConfig(
                 r=16,
@@ -1783,8 +1783,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = RandLoraConfig(
                 r=16,
@@ -1843,8 +1843,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = RandLoraConfig(
                 r=16,
@@ -2007,8 +2007,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = RoadConfig(
                 variant="road_1",
@@ -2065,8 +2065,8 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = RoadConfig(
                 variant="road_1",
@@ -2452,8 +2452,8 @@ class PeftGPTQGPUTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -4051,8 +4051,8 @@ class PeftAwqGPUTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,
@@ -4211,8 +4211,8 @@ class PeftEetqGPUTests(unittest.TestCase):
 
             model = prepare_model_for_kbit_training(model)
 
-            setattr(model, "model_parallel", True)
-            setattr(model, "is_parallelizable", True)
+            model.model_parallel = True
+            model.is_parallelizable = True
 
             config = LoraConfig(
                 r=16,

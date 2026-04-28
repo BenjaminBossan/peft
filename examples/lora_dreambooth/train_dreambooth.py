@@ -745,7 +745,7 @@ def main(args):
 
     if args.enable_xformers_memory_efficient_attention:
         if accelerator.device.type == "xpu":
-            logger.warn("XPU hasn't support xformers yet, ignore it.")
+            logger.warning("XPU hasn't support xformers yet, ignore it.")
         elif is_xformers_available():
             unet.enable_xformers_memory_efficient_attention()
         else:

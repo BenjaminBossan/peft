@@ -22,9 +22,8 @@ from typing import Any, Optional, Union
 
 import torch
 import torch.distributed as dist
-import torch.nn as nn
 import torch.nn.functional as F
-from torch import svd_lowrank
+from torch import nn, svd_lowrank
 from transformers.pytorch_utils import Conv1D
 
 from peft.import_utils import is_transformers_ge_v5_4_0
@@ -639,7 +638,7 @@ class LoraLayer(BaseTunerLayer):
         value = self._caches.pop(key)
         return value
 
-    def set_scale(self, adapter: str, scale: float | int) -> None:
+    def set_scale(self, adapter: str, scale: float) -> None:
         """Set the scale of the given adapter to the initial scale multiplied by the provided factor
 
         The initial scale is determined by the configured `r` (rank) and `lora_alpha`.
@@ -652,7 +651,7 @@ class LoraLayer(BaseTunerLayer):
         else:
             self.scaling[adapter] = scale * self.lora_alpha[adapter] / self.r[adapter]
 
-    def scale_layer(self, scale: float | int) -> None:
+    def scale_layer(self, scale: float) -> None:
         """Multiply the current scale of all active adapters by the provided factor"""
         if scale == 1:
             return

@@ -9,8 +9,8 @@ from typing import Optional, Union
 
 import safetensors
 import torch
-import torch.nn as nn
 from diffusers import UNet2DConditionModel
+from torch import nn
 from transformers import CLIPTextModel
 
 from peft import LoHaConfig, LoKrConfig, LoraConfig, PeftType, get_peft_model, set_peft_model_state_dict

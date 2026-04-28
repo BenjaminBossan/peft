@@ -17,6 +17,9 @@ from peft import LoHaConfig, LoKrConfig, LoraConfig, PeftType, get_peft_model, s
 from peft.tuners.lokr.layer import factorization
 
 
+logger = logging.getLogger(__name__)
+
+
 # Default kohya_ss LoRA replacement modules
 # https://github.com/kohya-ss/sd-scripts/blob/c924c47f374ac1b6e33e71f82948eb1853e2243f/networks/lora.py#L661
 UNET_TARGET_REPLACE_MODULE = ["Transformer2DModel", "Attention"]
@@ -495,7 +498,7 @@ if __name__ == "__main__":
             and getattr(config, "use_effective_conv2d", False)
             and args.loha_conv2d_weights_fix is False
         ):
-            logging.warning(
+            logger.warning(
                 'lycoris-lora<=1.9.0 LoHa implementation contains a bug, which can be fixed with "--loha_conv2d_weights_fix".\n'
                 "For more info, please refer to https://github.com/huggingface/peft/pull/1021 and https://github.com/KohakuBlueleaf/LyCORIS/pull/115"
             )

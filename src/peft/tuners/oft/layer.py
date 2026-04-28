@@ -191,7 +191,7 @@ class OFTRotationModule(nn.Module):
         Unfold with stride=1, padding=0 to preserve spatial dimensions. Only use kernel_size from base layer to define
         patch size.
         """
-        batch_size, in_channels, in_height, in_width = x.shape
+        batch_size, _, in_height, in_width = x.shape
 
         if isinstance(self.kernel_size, int):
             kernel_height, kernel_width = self.kernel_size, self.kernel_size

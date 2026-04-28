@@ -208,7 +208,6 @@ def loftq_init(weight: Union[torch.Tensor, torch.nn.Parameter], num_bits: int, r
     if num_iter <= 0:
         raise ValueError("Number of iterations must be greater than 0")
 
-    out_feature, in_feature = weight.size()
     device = weight.device
     dtype = weight.dtype
     if not is_bnb_4bit_available() and num_bits == 4:
@@ -342,7 +341,7 @@ class _SafetensorLoader:
                     name = name[len(self.base_model_prefix) + 1 :]
                     tensor = f.get_tensor(name)
                 else:
-                    raise exc
+                    raise
         return tensor
 
 

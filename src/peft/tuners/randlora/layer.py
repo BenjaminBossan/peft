@@ -137,8 +137,8 @@ class RandLoraLayer(BaseTunerLayer):
                     "The `randlora_A` and `randlora_B` buffers are empty. This should not happen. Please report this issue."
                 )
             # we can take any of the existing adapter's parameters, as they should all be identical
-            randlora_A_param = list(self.randlora_A.values())[0]
-            randlora_B_param = list(self.randlora_B.values())[0]
+            randlora_A_param = next(iter(self.randlora_A.values()))
+            randlora_B_param = next(iter(self.randlora_B.values()))
 
             error_tmpl = (
                 "{} has a size of {} but {} or greater is required; this probably happened because an additional RandLora "

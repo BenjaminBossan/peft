@@ -733,8 +733,8 @@ class TestTrainableTokens:
         peft_state_dict = get_peft_model_state_dict(peft_model)
 
         # the state dict or the peft model state dict must not include tied adapter weights
-        state_dict_keys = [n for n, _ in state_dict.items() if "tied_adapter." in n]
-        peft_state_dict_keys = [n for n, _ in peft_state_dict.items() if "tied_adapter." in n]
+        state_dict_keys = [n for n in state_dict.keys() if "tied_adapter." in n]
+        peft_state_dict_keys = [n for n in peft_state_dict.keys() if "tied_adapter." in n]
 
         assert not state_dict_keys
         assert not peft_state_dict_keys

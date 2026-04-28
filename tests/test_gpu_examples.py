@@ -5156,7 +5156,7 @@ class TestEvaInitializationGPU:
                 )
 
         mean_cosine_similarities = {k: torch.tensor(v).mean() for k, v in cos_sims.items()}
-        for layer_name, mean_cosine_similarity in mean_cosine_similarities.items():
+        for mean_cosine_similarity in mean_cosine_similarities.values():
             assert mean_cosine_similarity > self.COSINE_SIMILARITY_THRESHOLD, (
                 f"Mean absolute cosine similarity {mean_cosine_similarity:.4f} "
                 f"is not greater than {self.COSINE_SIMILARITY_THRESHOLD}"

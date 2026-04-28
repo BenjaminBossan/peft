@@ -239,7 +239,7 @@ class LycorisTuner(BaseTuner):
         # We didn't find corresponding type, so adapter for this layer is not supported
         if new_module_cls is None:
             supported_modules = ", ".join(layer.__name__ for layer in cls.layers_mapping.keys())
-            raise ValueError(
+            raise TypeError(
                 f"Target module of type {type(target)} not supported, "
                 f"currently only adapters for {supported_modules} are supported"
             )
@@ -249,11 +249,11 @@ class LycorisTuner(BaseTuner):
         else:
             target_base_layer = target
 
-        if isinstance(target_base_layer, (torch.nn.Conv2d, torch.nn.Conv1d)) or isinstance(target_base_layer, torch.nn.Linear):
+        if isinstance(target_base_layer, (torch.nn.Conv2d, torch.nn.Conv1d, torch.nn.Linear)):
             new_module = new_module_cls(target, adapter_name=adapter_name, config=config, **kwargs)
         else:
             supported_modules = ", ".join(layer.__name__ for layer in cls.layers_mapping.keys())
-            raise ValueError(
+            raise TypeError(
                 f"Target module of type {type(target)} not supported, "
                 f"currently only adapters for {supported_modules} are supported"
             )

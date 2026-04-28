@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import warnings
+from itertools import pairwise
 from typing import Any, Optional, Union
 
 import torch
@@ -81,7 +82,7 @@ class MixedModel(BaseTuner):
 
         """
         if not isinstance(config, Configs.__args__):
-            raise ValueError(
+            raise TypeError(
                 f"{self.__class__.__name__} only supports {COMPATIBLE_TUNER_TYPES} configs, but got {type(config)}."
             )
 
@@ -106,7 +107,7 @@ class MixedModel(BaseTuner):
         elif isinstance(config, shira.ShiraConfig):
             shira.ShiraModel._create_and_replace(self, config, *args, **kwargs)
         else:
-            raise ValueError(f"Unsupported config type {type(config)}, should be one of {COMPATIBLE_TUNER_TYPES}.")
+            raise TypeError(f"Unsupported config type {type(config)}, should be one of {COMPATIBLE_TUNER_TYPES}.")
 
     def _replace_module(self, parent, child_name, new_module, child) -> None:
         setattr(parent, child_name, new_module)
@@ -197,7 +198,7 @@ class MixedModel(BaseTuner):
         elif isinstance(config, shira.ShiraConfig):
             new_module = shira.ShiraModel._create_new_module(config, adapter_name, target, **kwargs)
         else:
-            raise ValueError(f"Unknown config type {type(config)}, should be one of {COMPATIBLE_TUNER_TYPES}.")
+            raise TypeError(f"Unknown config type {type(config)}, should be one of {COMPATIBLE_TUNER_TYPES}.")
         return new_module
 
     def set_adapter(self, adapter_name: Union[str, list[str]], inference_mode: bool = False) -> None:
@@ -239,7 +240,7 @@ class MixedModel(BaseTuner):
             while hasattr(layer, "base_layer"):
                 path.append(layer)
                 layer = layer.base_layer
-            for layer_before, layer_after in zip(path[:-1], path[1:]):
+            for layer_before, layer_after in pairwise(path):
                 layer_after.merge(safe_merge=safe_merge, adapter_names=adapter_names)
                 layer_before.base_layer = layer_after.base_layer
             module.merge(safe_merge=safe_merge, adapter_names=adapter_names)
@@ -295,8 +296,8 @@ class MixedModel(BaseTuner):
                 f"Adapter(s) {sorted(mismatched)} not found, available adapters: {sorted(self.peft_config.keys())}"
             )
 
-        for adapter_name in adapter_names:
-            del self.peft_config[adapter_name]
+        for adapter_to_delete in adapter_names:
+            del self.peft_config[adapter_to_delete]
 
             key_list = [key for key, _ in self.model.named_modules() if not any(prefix in key for prefix in PREFIXES)]
             new_adapter = None

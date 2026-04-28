@@ -106,7 +106,7 @@ def onload_layer(layer):
         ):
             # find the disk-offload index (maps modules to safetensors) from the `dataset` (OffloadedWeightsLoader object)
             index = layer.base_layer._hf_hook.weights_map.dataset.index
-            module_name = list(dict(layer.base_layer._hf_hook.weights_map.dataset).keys())[0]  # any module will do
+            module_name = next(iter(dict(layer.base_layer._hf_hook.weights_map.dataset).keys()))  # any module will do
             file_name = index[module_name]["safetensors_file"]
             base_name_arr = []
             # get effective dir name
@@ -175,7 +175,7 @@ def _get_in_out_features(module: nn.Module) -> tuple[int, int] | tuple[None, Non
             out_features, in_features = module.weight.to_local().shape
         else:
             in_features, out_features = module.in_features, module.out_features
-    elif isinstance(module, nn.Conv1d) or isinstance(module, nn.Conv2d) or isinstance(module, nn.Conv3d):
+    elif isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
         in_features, out_features = module.in_channels, module.out_channels
     elif isinstance(module, nn.Embedding):
         in_features, out_features = module.num_embeddings, module.embedding_dim
@@ -1811,7 +1811,9 @@ def check_target_module_exists(config, key: str) -> bool | re.Match[str] | None:
         if isinstance(config.exclude_modules, str):
             if re.fullmatch(config.exclude_modules, key):
                 return _ExcludedModule()
-        elif key in config.exclude_modules or any(key.endswith(f".{exclude_key}") for exclude_key in config.exclude_modules):
+        elif key in config.exclude_modules or any(
+            key.endswith(f".{exclude_key}") for exclude_key in config.exclude_modules
+        ):
             return _ExcludedModule()
 
     # Adapters should never match on modules to save modules as it is a guarantee for conflicts of behavior
@@ -1917,7 +1919,7 @@ def _maybe_include_all_linear_layers(peft_config: PeftConfig, model: nn.Module) 
         output_emb = model.get_output_embeddings()
         if output_emb is not None:
             # ignore the last classification head for text generation models
-            last_module_name = [name for name, module in model.named_modules() if module is output_emb][0]
+            last_module_name = next(name for name, module in model.named_modules() if module is output_emb)
             module_names_to_exclude.add(last_module_name)
         elif peft_config.task_type == TaskType.SEQ_CLS:
             # ignore classifier head for classification models (issue 2027)
@@ -1925,7 +1927,7 @@ def _maybe_include_all_linear_layers(peft_config: PeftConfig, model: nn.Module) 
             for name in SEQ_CLS_HEAD_NAMES:
                 cls_head = getattr(model, name, None)
                 if cls_head is not None:
-                    last_module_name = [name for name, module in model.named_modules() if module is cls_head][0]
+                    last_module_name = next(name for name, module in model.named_modules() if module is cls_head)
                     module_names_to_exclude.add(last_module_name)
                     break
 
@@ -1953,7 +1955,7 @@ def check_adapters_to_merge(module: BaseTunerLayer, adapter_names: Optional[list
     if adapter_names is None:
         adapter_names = module.active_adapters
     if isinstance(adapter_names, str):
-        raise ValueError(f"adapter_names should be a list of strings, got {adapter_names!r}.")
+        raise TypeError(f"adapter_names should be a list of strings, got {adapter_names!r}.")
 
     if module.merged:
         merged_adapters = set(module.merged_adapters)

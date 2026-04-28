@@ -43,12 +43,15 @@ extras["test"] = extras["dev"] + [
     "torchvision",
 ]
 
+with open("README.md", encoding="utf-8") as f:
+    long_description = f.read()
+
 setup(
     name="peft",
     version=VERSION,
     description="Parameter-Efficient Fine-Tuning (PEFT)",
     license_files=["LICENSE"],
-    long_description=open("README.md", encoding="utf-8").read(),
+    long_description=long_description,
     long_description_content_type="text/markdown",
     keywords="deep learning",
     license="Apache",

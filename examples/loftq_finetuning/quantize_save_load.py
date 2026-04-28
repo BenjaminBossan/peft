@@ -59,11 +59,11 @@ def unwrap_model(model, sub_module_name=".base_layer"):
 def print_model(model, name):
     print("=" * 10 + name + "=" * 10)
     print(model)
-    for name, param in model.named_parameters():
+    for param_name, param in model.named_parameters():
         if torch.is_tensor(param):
             if param.dtype in [torch.float32, torch.float16]:
                 print(
-                    name,
+                    param_name,
                     param.shape,
                     param.device,
                     param.dtype,

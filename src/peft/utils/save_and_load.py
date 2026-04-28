@@ -587,7 +587,7 @@ def _maybe_shard_state_dict_for_tp(model, state_dict, adapter_name):
             # We transpose back because LoraEmbedding expects the weights to be of shape (rank, num_embeddings)
             sharded = sharded.T
         else:
-            raise ValueError(f"Unknown tensor parallel plan {tp_plan} for {module.__class__.__name__}.")
+            raise TypeError(f"Unknown tensor parallel plan {tp_plan} for {module.__class__.__name__}.")
 
         if weight is None:
             weight = state_dict[key]

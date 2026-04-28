@@ -49,7 +49,7 @@ class HRALayer(BaseTunerLayer):
         elif isinstance(base_layer, nn.Conv2d):
             self.in_features, self.out_features = base_layer.in_channels, base_layer.out_channels
         else:
-            raise ValueError(f"Unsupported layer type {type(base_layer)}")
+            raise TypeError(f"Unsupported layer type {type(base_layer)}")
 
     def update_layer(
         self,

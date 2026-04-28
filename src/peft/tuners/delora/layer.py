@@ -58,7 +58,7 @@ class DeloraLayer(BaseTunerLayer):
         if isinstance(base_layer_mod, nn.Linear):
             self.in_features, self.out_features = base_layer_mod.in_features, base_layer_mod.out_features
         else:
-            raise ValueError(f"Unsupported layer type {type(base_layer_mod)}")
+            raise TypeError(f"Unsupported layer type {type(base_layer_mod)}")
 
     @staticmethod
     def _compute_delta(

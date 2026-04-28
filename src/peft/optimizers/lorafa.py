@@ -79,7 +79,7 @@ class LoraFAOptimizer(Optimizer):
         super().__init__(params, defaults)
 
     @torch.no_grad()
-    def step(self, closure: Callable = None):
+    def step(self, closure: Callable | None = None):
         """
         Performs a single optimization step.
 

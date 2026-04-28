@@ -233,7 +233,7 @@ class BOFTLayer(BaseTunerLayer):
         elif isinstance(base_layer, nn.Conv2d):
             in_features, out_features = base_layer.in_channels, base_layer.out_channels
         else:
-            raise ValueError(f"Unsupported layer type {type(base_layer)}")
+            raise TypeError(f"Unsupported layer type {type(base_layer)}")
 
         self.in_features = in_features
         self.out_features = out_features

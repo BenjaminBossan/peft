@@ -45,7 +45,7 @@ class C3ALayer(BaseTunerLayer):
         if isinstance(base_layer, nn.Linear):
             self.in_features, self.out_features = base_layer.in_features, base_layer.out_features
         else:
-            raise ValueError(f"Unsupported layer type {type(base_layer)}")
+            raise TypeError(f"Unsupported layer type {type(base_layer)}")
 
     def get_delta_weight(self, adapter) -> torch.Tensor:
         if adapter not in self.c3a_kernel.keys():

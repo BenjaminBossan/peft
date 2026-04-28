@@ -69,8 +69,8 @@ class AdaLoraModel(LoraModel):
         super().__init__(model, config, adapter_name, **kwargs)
 
         traininable_mode_counter = 0
-        for config in self.peft_config.values():
-            if not config.inference_mode:
+        for peft_config in self.peft_config.values():
+            if not peft_config.inference_mode:
                 traininable_mode_counter += 1
 
         if traininable_mode_counter > 1:
@@ -253,7 +253,7 @@ class AdaLoraModel(LoraModel):
                 rank_idx = rank_idx.view(-1)
                 rank = rank_idx.sum().item()
             else:
-                raise ValueError("Unexpected type of rank_idx")
+                raise TypeError("Unexpected type of rank_idx")
             key = ".".join(name.split(".")[0:-2]) if adapter_name in name else ".".join(name.split(".")[0:-1])
             _, target, _ = _get_submodules(self.model, key)
             lora_E_weights = target.lora_E[adapter_name][rank_idx]

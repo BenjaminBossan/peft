@@ -36,7 +36,7 @@ class _BaseAdaptedAttention(nn.Module):
             model: The original transformer attention module that is being wrapped.
         """
         if isinstance(model, _BaseAdaptedAttention):
-            raise ValueError("Unable to stack multiple adaption prompts")
+            raise TypeError("Unable to stack multiple adaption prompts")
         super().__init__()
         self.model_type = model_type
         self.model = model

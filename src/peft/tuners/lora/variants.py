@@ -778,12 +778,13 @@ class BlockDiagonalLinear(nn.Module):
         nblocks: int,
         init_zero: bool = False,
         dtype: torch.dtype = torch.float32,
-        device: torch.device = torch.device("cpu"),
+        device: torch.device | None = None,
     ):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.nblocks = nblocks
+        device = device or torch.device("cpu")
         if self.in_features % nblocks != 0 or self.out_features % nblocks != 0:
             raise ValueError(
                 f"self.in_features={self.in_features} or self.out_features={self.out_features} not divisible by {self.nblocks}"

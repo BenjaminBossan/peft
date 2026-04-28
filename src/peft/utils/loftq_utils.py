@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import warnings
 from collections.abc import Callable
@@ -212,9 +211,6 @@ def loftq_init(weight: Union[torch.Tensor, torch.nn.Parameter], num_bits: int, r
     out_feature, in_feature = weight.size()
     device = weight.device
     dtype = weight.dtype
-    logging.info(
-        f"Weight: ({out_feature}, {in_feature}) | Rank: {reduced_rank} | Num Iter: {num_iter} | Num Bits: {num_bits}"
-    )
     if not is_bnb_4bit_available() and num_bits == 4:
         # TODO for PEFT 0.20 remove NFQuantizer invocation and throw an exception
         quantizer = NFQuantizer(num_bits=num_bits, device=device, method="normal", block_size=64)

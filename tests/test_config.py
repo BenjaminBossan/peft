@@ -395,7 +395,6 @@ class TestPeftConfig:
             {"total_step": 10, "tinit": 20, "tfinal": 0},
             {"total_step": 10, "tinit": 0, "tfinal": 10},
             {"total_step": 10, "tinit": 10, "tfinal": 0},
-            {"total_step": 10, "tinit": 20, "tfinal": 0},
             {"total_step": 10, "tinit": 20, "tfinal": 20},
             {"total_step": 10, "tinit": 0, "tfinal": 20},
         ],

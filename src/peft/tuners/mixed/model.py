@@ -304,12 +304,13 @@ class MixedModel(BaseTuner):
             for key in key_list:
                 _, target, _ = _get_submodules(self.model, key)
                 if isinstance(target, BaseTunerLayer):
-                    target.delete_adapter(adapter_name)
+                    target.delete_adapter(adapter_to_delete)
                     if new_adapter is None:
                         new_adapter = target.active_adapters[:]
 
         self.active_adapter = new_adapter or []
-        _delete_auxiliary_adapter(self.model, adapter_name, new_active_adapters=new_adapter)
+        if adapter_to_delete in adapter_names:
+            _delete_auxiliary_adapter(self.model, adapter_to_delete, new_active_adapters=new_adapter)
 
     def generate(self, *args: Any, **kwargs: Any):
         return self.model.generate(*args, **kwargs)

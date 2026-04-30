@@ -1106,3 +1106,85 @@ class TestDecoderModels(PeftCommonTester):
         assert not merged.config.tie_word_embeddings
         assert merged.lm_head.weight is not merged.model.embed_tokens.weight
         assert merged.lm_head.weight.data_ptr() != merged.model.embed_tokens.weight.data_ptr()
+
+    def test_prefix_tuning_gemma4_works(self):
+        # see #3201
+        # The issue was that head dim differs depending on whether sliding window attention is being used or not:
+        # https://github.com/huggingface/transformers/blob/223fe5231b783fbfb25296bb0a243dad5d158cde/src/transformers/models/gemma4/modeling_gemma4.py#L1147
+        # Prefix tuning could deal with different sizes, resulting in a size error
+
+        model_id = "google/gemma-4-E2B"
+        with hub_online_once(model_id):
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                dtype=torch.bfloat16,
+            ).to(self.torch_device)
+            config = PrefixTuningConfig(
+                task_type=TaskType.CAUSAL_LM,
+                num_virtual_tokens=20,
+                prefix_projection=False,
+            )
+            model = get_peft_model(model, config)
+
+            inputs = torch.arange(10).view(1, -1).to(self.torch_device)
+            model(inputs)  # does not raise
+
+            # do mini training run
+            optim = torch.optim.SGD(model.parameters(), lr=0.001)
+            losses = []
+            for _ in range(5):
+                optim.zero_grad()
+                outputs = model(inputs)
+                label = torch.zeros_like(outputs.logits)
+                label[:, :, 1] = 1
+                loss = torch.nn.functional.cross_entropy(outputs.logits, label)
+                loss.backward()
+                optim.step()
+                losses.append(loss)
+
+            assert torch.isfinite(loss)
+            assert not torch.isclose(losses[0], losses[-1], atol=1e-5, rtol=1e-2)
+
+    def test_prefix_tuning_gemma4_warns_if_some_layers_skipped(self):
+        # See previous test_prefix_tuning_gemma4_works. When the embedding matrix is too small to fit any layer targeted
+        # by prefix tuning, raise an error
+        model_id = "google/gemma-4-E2B"
+        with hub_online_once(model_id):
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                dtype=torch.bfloat16,
+            ).to(self.torch_device)
+            config = PrefixTuningConfig(
+                task_type=TaskType.CAUSAL_LM,
+                num_virtual_tokens=20,
+                prefix_projection=False,
+            )
+            text_config = model.config.get_text_config()
+            text_config.num_kv_shared_layers = 1  # set to lower value (was 2)
+            model = get_peft_model(model, config)
+
+            inputs = torch.arange(10).view(1, -1).to(self.torch_device)
+            with pytest.warns(UserWarning, match=r"skipped \[.*\] due to KV shape"):
+                model(inputs)
+
+    def test_prefix_tuning_gemma4_raises_if_all_layers_skipped(self):
+        # See previous test_prefix_tuning_gemma4_works. When the embedding matrix is too small to fit any layer targeted
+        # by prefix tuning, raise an error
+        model_id = "google/gemma-4-E2B"
+        with hub_online_once(model_id):
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                dtype=torch.bfloat16,
+            ).to(self.torch_device)
+            config = PrefixTuningConfig(
+                task_type=TaskType.CAUSAL_LM,
+                num_virtual_tokens=20,
+                prefix_projection=False,
+            )
+            model = get_peft_model(model, config)
+            text_config = model.config.get_text_config()
+            text_config.num_key_value_heads = 999
+
+            inputs = torch.arange(10).view(1, -1).to(self.torch_device)
+            with pytest.raises(ValueError, match="skipped every layer"):
+                model(inputs)

@@ -866,6 +866,11 @@ class Linear(nn.Module, LoraLayer):
         if not config.use_dora and not use_alora:
             return None
 
+        if config.use_dora == "kernel":
+            from .variants import DoraKernelLinearVariant
+
+            return DoraKernelLinearVariant()
+
         from .variants import ALoraLinearVariant, DoraLinearVariant
 
         if use_alora:

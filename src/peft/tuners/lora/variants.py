@@ -28,7 +28,7 @@ from peft.utils.other import transpose
 
 from .arrow import ArrowLoraLinearLayer
 from .config import LoraConfig, PeftConfig
-from .dora import DoraConv1dLayer, DoraConv2dLayer, DoraConv3dLayer, DoraEmbeddingLayer, DoraLinearLayer
+from .dora import DoraConv1dLayer, DoraConv2dLayer, DoraConv3dLayer, DoraEmbeddingLayer, DoraLinearLayer, DoraKernelLinearLayer
 from .layer import Conv1d, Conv2d, Conv3d, Embedding, Linear, LoraLayer, LoraVariant, _ConvNd
 from .monteclora import MontecloraSampler
 from .velora import VeloraFunction, _get_group_dim, _normalize_projection, _reshape_to_grouped_subtokens
@@ -1310,3 +1310,133 @@ class MiCAEmbeddingVariant(LoraVariant):
             adapter_output = adapter_output * embed_scale.to(adapter_output.dtype)
 
         return result + adapter_output
+
+
+
+
+
+
+
+
+
+class DoraKernelLinearVariant(LoraVariant):
+    """DoRA variant using the low-rank kernel for the weight norm.
+
+    Only supports ``nn.Linear`` base layers. Conv and embedding layers fall back to the standard DoRA variant.
+    """
+
+    @staticmethod
+    def init(module: Linear, adapter_name: str, **kwargs: Any) -> None:
+        # same as DoraLinearVariant.init except that DoraKernelLinearLayer is used instead of DoraLinearLayer
+        if not module.lora_magnitude_vector:
+            module.adapter_layer_names = module.adapter_layer_names[:] + ("lora_magnitude_vector",)
+
+        dora_layer = DoraKernelLinearLayer(fan_in_fan_out=getattr(module, "fan_in_fan_out", False))
+        lora_A = module.lora_A[adapter_name].weight
+        lora_B = module.lora_B[adapter_name].weight
+        place_on_cpu = module.ephemeral_gpu_offload and (lora_A.device.type == "cpu" or lora_B.device.type == "cpu")
+        if module.ephemeral_gpu_offload:
+            if lora_A.device.type in ["cuda", "xpu"]:
+                lora_B = lora_B.to(lora_A.device)
+            else:
+                if lora_B.device.type not in ["cuda", "xpu"]:
+                    if is_xpu_available():
+                        lora_B = lora_B.to("xpu")
+                    else:
+                        lora_B = lora_B.to("cuda")
+                lora_A = lora_A.to(lora_B.device)
+        scaling = module.scaling[adapter_name]
+        dora_layer.update_layer(
+            base_layer=module.get_base_layer(),
+            lora_A=lora_A,
+            lora_B=lora_B,
+            scaling=scaling,
+            place_on_cpu=place_on_cpu,
+        )
+        module.lora_magnitude_vector[adapter_name] = dora_layer
+
+    @staticmethod
+    def merge_safe(module: Linear, active_adapter: str, orig_weight: torch.Tensor) -> torch.Tensor:
+        # Reuse the standard DoRA merge, which uses the full weight norm
+        return DoraLinearVariant.merge_safe(module, active_adapter, orig_weight)
+
+    @staticmethod
+    def merge_unsafe(module: Linear, active_adapter: str, orig_weight: torch.Tensor) -> None:
+        DoraLinearVariant.merge_unsafe(module, active_adapter, orig_weight)
+
+    @staticmethod
+    def unmerge(module: Linear, active_adapter: str, orig_weight: torch.Tensor) -> torch.Tensor:
+        return DoraLinearVariant.unmerge(module, active_adapter, orig_weight)
+
+    @staticmethod
+    def forward(
+        module: Linear,
+        active_adapter: str,
+        x: torch.Tensor,
+        result: torch.Tensor,
+        **kwargs,
+    ) -> torch.Tensor:
+        return DoraLinearVariant.forward(module, active_adapter, x, result)
+
+
+"""
+## metamath
+
+### normal DoRA:
+
+{"step": "  250", "samples": "   1000", "lr": "5.87e-05", "loss avg": "0.8182", "valid acc": "0.380", "gen valid tokens": 8812, "train time": "34.5s", "eval time": "8.2s", "train tokens / sec": "6134", "mem allocated": "6925143398", "mem reserved": "15535240643", "elapsed time": "1min 5s"}
+{"step": "  500", "samples": "   2000", "lr": "0.00e+00", "loss avg": "0.6911", "valid acc": "0.360", "gen valid tokens": 9322, "train time": "33.8s", "eval time": "9.8s", "train tokens / sec": "6146", "mem allocated": "6917772009", "mem reserved": "15111674659", "elapsed time": "1min 52s"}
+
+Test accuracy: 0.372
+accelerator memory max: 20548MB
+accelerator memory reserved avg: 14613MB
+accelerator memory reserved 99th percentile: 20548MB
+train time: 446.7330271039682s
+total time: 468.53s
+
+### DoRA kernel:
+
+{"step": "  250", "samples": "   1000", "lr": "5.87e-05", "loss avg": "0.8182", "valid acc": "0.420", "gen valid tokens": 9004, "train time": "31.9s", "eval time": "10.3s", "train tokens / sec": "6630", "mem allocated": "6927350024", "mem reserved": "15417070322", "elapsed time": "1min 4s"}
+{"step": "  500", "samples": "   2000", "lr": "0.00e+00", "loss avg": "0.6911", "valid acc": "0.480", "gen valid tokens": 9488, "train time": "31.3s", "eval time": "9.6s", "train tokens / sec": "6653", "mem allocated": "6919892146", "mem reserved": "14996490682", "elapsed time": "1min 48s"}
+
+Test accuracy: 0.368
+accelerator memory max: 20022MB
+accelerator memory reserved avg: 14502MB
+accelerator memory reserved 99th percentile: 20022MB
+train time: 376.729352149996s
+total time: 400.51s
+file size of checkpoint: 35.5MB
+
+## image gen
+
+### normal DoRA
+
+{"step": " 100", "samples": "  200", "lr": "1.00e-04", "loss avg": "0.7733", "valid sim": "0.6679", "train time": "126.4s", "eval time": "26.6s", "mem allocated": "8905764997", "mem reserved": "12381564436", "elapsed time": "2min 38s"}
+
+Test DINOv2 similarity: 0.6188
+Test drift:             0.2541
+Saved PEFT checkpoint to /tmp/tmp2bzqt4t8
+Experiment run was categorized as a test run on branch enh-better-dora
+accelerator memory max: 11880MB
+accelerator memory reserved avg: 11831MB
+accelerator memory reserved 99th percentile: 11880MB
+train time: 480.60444636497414s
+total time: 516.53s
+file size of checkpoint: 149.7MB
+
+### DoRA kernel:
+
+{"step": " 100", "samples": "  200", "lr": "1.00e-04", "loss avg": "0.7736", "valid sim": "0.6295", "train time": "112.6s", "eval time": "21.2s", "mem allocated": "8907352279", "mem reserved": "11714670100", "elapsed time": "2min 19s"}
+
+Test DINOv2 similarity: 0.6585
+Test drift:             0.2502
+Saved PEFT checkpoint to /tmp/tmpmldqvod5
+Experiment run was categorized as a test run on branch enh-better-dora
+accelerator memory max: 11304MB
+accelerator memory reserved avg: 11215MB
+accelerator memory reserved 99th percentile: 11304MB
+train time: 400.2186048569856s
+total time: 432.66s
+file size of checkpoint: 149.7MB
+
+"""

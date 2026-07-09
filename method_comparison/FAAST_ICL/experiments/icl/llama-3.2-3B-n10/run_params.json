@@ -1,0 +1,8 @@
+{
+  "mode": "icl",
+  "max_seq_length": 8192,
+  "batch_size_eval": 16,
+  "generation_kwargs": {
+    "max_new_tokens": 300
+  }
+}

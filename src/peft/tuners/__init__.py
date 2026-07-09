@@ -22,6 +22,7 @@ from .cartridge import CartridgeConfig, CartridgeEncoder
 from .cpt import CPTConfig, CPTEmbedding
 from .deft import DeftConfig, DeftModel
 from .delora import DeloraConfig, DeloraModel
+from .faast import FaastConfig, FaastModel
 from .fourierft import FourierFTConfig, FourierFTModel
 from .frod import FrodConfig, FrodModel
 from .glora import GloraConfig, GloraModel
@@ -99,6 +100,8 @@ __all__ = [
     "DeloraConfig",
     "DeloraModel",
     "EvaConfig",
+    "FaastConfig",
+    "FaastModel",
     "FourierFTConfig",
     "FourierFTModel",
     "FrodConfig",

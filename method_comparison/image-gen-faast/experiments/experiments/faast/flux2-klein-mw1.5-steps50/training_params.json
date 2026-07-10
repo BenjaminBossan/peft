@@ -1,0 +1,4 @@
+{
+  "max_steps": 50,
+  "eval_steps": 50
+}

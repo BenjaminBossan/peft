@@ -1,0 +1,14 @@
+{
+  "auto_mapping": null,
+  "base_model_name_or_path": null,
+  "inference_mode": true,
+  "peft_type": "FAAST",
+  "target_modules": ["proj_out"],
+  "r": null,
+  "filter_alpha": 0.5,
+  "ridge_alpha": 0.001,
+  "memory_weight": 1.5,
+  "fit_mode": "output",
+  "accumulator_dtype": "float32",
+  "kv_source": "all"
+}

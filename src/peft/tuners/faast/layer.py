@@ -43,7 +43,10 @@ class FaastLayer(nn.Module, BaseTunerLayer):
         "faast_num_tokens",
         "r",
         "filter_alpha",
+        "ridge_alpha",
         "memory_weight",
+        "fit_mode",
+        "accumulator_dtype",
         "kv_source",
         "preserve_output_scale",
     )
@@ -64,20 +67,23 @@ class FaastLayer(nn.Module, BaseTunerLayer):
 
         self.r = {}
         self.filter_alpha = {}
+        self.ridge_alpha = {}
         self.memory_weight = {}
+        self.fit_mode = {}
+        self.accumulator_dtype = {}
         self.kv_source = {}
         self.preserve_output_scale = {}
 
         # The fast weights are computed in closed form, never through gradient descent.
         self.frozen_peft_weight_names: dict[str, tuple[str, ...]] = {}
 
-        # Accumulators for the closed-form solve; plain dicts so that they don't end up in the state dict.
+        # Accumulators for the closed-form solve; plain dicts so that they don't end up in the state dict. A saved
+        # adapter can be used for inference, but continued learning after loading is not supported yet because the
+        # loaded fast weights and token count have no corresponding sufficient statistics.
         self._faast_gram: dict[str, torch.Tensor] = {}
         self._faast_cross: dict[str, torch.Tensor] = {}
         self._faast_val_sqnorm: dict[str, torch.Tensor] = {}
-        # Fraction of the target energy explained by the fast weights on the learning data; a diagnostic for how much
-        # the least-squares prediction is attenuated relative to the true targets (regression toward the mean).
-        # Filled by the solve.
+        # Fractional reduction in squared regression error on the learning data, filled by the solve.
         self.faast_fit_ratio: dict[str, float] = {}
         # Context set by FaastModel.begin_learn for the duration of the learning forward passes.
         self._learn_context: Optional[dict[str, Any]] = None
@@ -90,7 +96,10 @@ class FaastLayer(nn.Module, BaseTunerLayer):
     def update_layer(self, adapter_name: str, config: FaastConfig) -> None:
         self.r[adapter_name] = config.r
         self.filter_alpha[adapter_name] = config.filter_alpha
+        self.ridge_alpha[adapter_name] = config.ridge_alpha
         self.memory_weight[adapter_name] = config.memory_weight
+        self.fit_mode[adapter_name] = config.fit_mode
+        self.accumulator_dtype[adapter_name] = config.accumulator_dtype
         self.kv_source[adapter_name] = config.kv_source
         self.preserve_output_scale[adapter_name] = config.preserve_output_scale
         self.frozen_peft_weight_names[adapter_name] = ("faast_W", "faast_A", "faast_B")
@@ -144,16 +153,20 @@ class FaastLayer(nn.Module, BaseTunerLayer):
         """Accumulate the regression statistics for flattened (num_pairs, d_key)/(num_pairs, d_val) tensors."""
         if keys.numel() == 0:
             return
-        keys = keys.to(torch.float32)
-        vals = vals.to(torch.float32)
+        accumulator_dtype = {
+            "float32": torch.float32,
+            "float64": torch.float64,
+        }[self.accumulator_dtype[adapter_name]]
+        keys = keys.to(accumulator_dtype)
+        vals = vals.to(accumulator_dtype)
         if adapter_name not in self._faast_gram:
             self._faast_gram[adapter_name] = torch.zeros(
-                self.d_key, self.d_key, device=keys.device, dtype=torch.float32
+                self.d_key, self.d_key, device=keys.device, dtype=accumulator_dtype
             )
             self._faast_cross[adapter_name] = torch.zeros(
-                self.d_key, self.d_val, device=keys.device, dtype=torch.float32
+                self.d_key, self.d_val, device=keys.device, dtype=accumulator_dtype
             )
-            self._faast_val_sqnorm[adapter_name] = torch.zeros((), device=keys.device, dtype=torch.float32)
+            self._faast_val_sqnorm[adapter_name] = torch.zeros((), device=keys.device, dtype=accumulator_dtype)
         self._faast_gram[adapter_name] += keys.T @ keys
         self._faast_cross[adapter_name] += keys.T @ vals
         self._faast_val_sqnorm[adapter_name] += (vals**2).sum()
@@ -170,6 +183,9 @@ class FaastLayer(nn.Module, BaseTunerLayer):
         cross = self._faast_cross[adapter_name].to(torch.float64)
         num_tokens = int(self.faast_num_tokens[adapter_name])
 
+        # TODO: Replace the normal-equation solve with a numerically stable streaming QR/SVD formulation. The direct
+        # pseudoinverse equivalence test protects the algebra on well-conditioned inputs, but K^T K still squares the
+        # condition number. Use accumulator_dtype="float64" to diagnose precision loss in the meantime.
         evals, evecs = torch.linalg.eigh(gram)  # ascending order
         sigma = evals.clamp(min=0.0).sqrt()
         epsilon = 1.0 / (num_tokens ** self.filter_alpha[adapter_name])
@@ -179,12 +195,16 @@ class FaastLayer(nn.Module, BaseTunerLayer):
             # eigenvalues are ascending, so the top-r directions are the last r entries
             keep[:-r] = False
         evecs = evecs[:, keep]
-        inv_evals = 1.0 / evals[keep]
-        mid = inv_evals.unsqueeze(1) * (evecs.T @ cross)
+        projected_cross = evecs.T @ cross
+        ridge = self.ridge_alpha[adapter_name] * evals.clamp(min=0.0).max()
+        inv_evals = 1.0 / (evals[keep] + ridge)
+        mid = inv_evals.unsqueeze(1) * projected_cross
 
-        # fraction of the target energy explained by the solution on the learning data:
-        # sum_i ||W k_i||^2 = tr(W^T G W) = sum_j evals_j * ||mid_j||^2 since evecs^T G evecs = diag(evals)
-        explained = (evals[keep].unsqueeze(1) * mid**2).sum()
+        # Fractional reduction in squared error relative to predicting zero. For unregularized least squares this
+        # simplifies to the predicted target energy; this general form remains correct when ridge is enabled.
+        predicted_energy = (evals[keep].unsqueeze(1) * mid**2).sum()
+        target_prediction_cross = (mid * projected_cross).sum()
+        explained = 2 * target_prediction_cross - predicted_energy
         total = self._faast_val_sqnorm[adapter_name].to(torch.float64)
         self.faast_fit_ratio[adapter_name] = float(explained / total) if total > 0 else 0.0
 
@@ -211,6 +231,8 @@ class FaastLayer(nn.Module, BaseTunerLayer):
 
     def _interpolate(self, adapter_name: str, base_output: torch.Tensor, prediction: torch.Tensor) -> torch.Tensor:
         weight = self.memory_weight[adapter_name]
+        if self.fit_mode[adapter_name] == "residual":
+            return base_output + weight * prediction
         return (1 - weight) * base_output + weight * prediction
 
     def merge(self, safe_merge: bool = False, adapter_names: Optional[list[str]] = None) -> None:
@@ -229,9 +251,9 @@ class FaastDecoderLayer(FaastLayer):
     FAAST layer that wraps a whole decoder layer of a causal language model (not a single linear layer).
 
     In learn mode, the wrapped layer's output hidden states at position t are collected as keys and the input
-    embeddings at position t+1 as values ("output memory" of the reference implementation). In inference mode, the
-    layer output is interpolated towards the fast-weight prediction:
-    `h <- (1 - memory_weight) * h + memory_weight * (h @ W^T)`.
+    embeddings at position t+1 as values ("output memory" of the reference implementation). Output-fit mode
+    interpolates towards the fast-weight prediction, while residual-fit mode learns the difference from the wrapped
+    layer output and adds the predicted correction.
     """
 
     def __init__(self, base_layer: nn.Module, adapter_name: str, config: FaastConfig, hidden_size: int) -> None:
@@ -280,6 +302,8 @@ class FaastDecoderLayer(FaastLayer):
             flat_mask = mask.reshape(-1)
             k = keys.reshape(-1, keys.size(-1))[flat_mask]
             v = vals.reshape(-1, vals.size(-1))[flat_mask]
+            if self.fit_mode[adapter_name] == "residual":
+                v = v - k
             self._accumulate_pairs(adapter_name, k, v)
 
     def forward(self, hidden_states: torch.Tensor, *args, **kwargs) -> Any:
@@ -320,15 +344,15 @@ class FaastLinear(FaastLayer):
     Unlike [`FaastDecoderLayer`], the regression targets are not derived from the inputs but must be supplied
     externally while learning: `begin_learn(values=...)` with `values` of shape `(*input_batch_dims, out_features)`,
     aligned position by position with the layer input (e.g. the ground-truth flow matching targets of a diffusion
-    model). In inference mode, the base layer output is interpolated towards the fast-weight prediction:
-    `out <- (1 - memory_weight) * base_layer(x) + memory_weight * (x @ W^T)`.
+    model). Output-fit mode interpolates the base layer output towards the fast-weight prediction. Residual-fit mode
+    instead learns `values - base_layer(x)` and adds the predicted correction to the base output.
     """
 
     def __init__(self, base_layer: nn.Module, adapter_name: str, config: FaastConfig) -> None:
         super().__init__(base_layer, adapter_name, config, d_key=base_layer.in_features, d_val=base_layer.out_features)
 
     @torch.no_grad()
-    def _accumulate(self, x: torch.Tensor) -> None:
+    def _accumulate(self, x: torch.Tensor, base_output: torch.Tensor) -> None:
         ctx = self._learn_context
         if "values" not in ctx:
             raise ValueError(
@@ -343,10 +367,14 @@ class FaastLinear(FaastLayer):
             )
         keys = x.reshape(-1, x.size(-1))
         vals = values.reshape(-1, values.size(-1))
+        flattened_base_output = base_output.reshape(-1, base_output.size(-1))
         for adapter_name in self.active_adapters:
             if adapter_name not in self.memory_weight:
                 continue
-            self._accumulate_pairs(adapter_name, keys, vals)
+            adapter_vals = vals
+            if self.fit_mode[adapter_name] == "residual":
+                adapter_vals = vals - flattened_base_output
+            self._accumulate_pairs(adapter_name, keys, adapter_vals)
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         output = self.base_layer(x, *args, **kwargs)
@@ -354,7 +382,7 @@ class FaastLinear(FaastLayer):
             return output
 
         if self._learn_context is not None:
-            self._accumulate(x)
+            self._accumulate(x, output)
             return output
 
         for adapter_name in self.active_adapters:

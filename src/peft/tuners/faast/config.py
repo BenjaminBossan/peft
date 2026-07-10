@@ -55,12 +55,23 @@ class FaastConfig(PeftConfig):
             Spectral filtering strength. Singular values of the key matrix below `sigma_max * epsilon` with
             `epsilon = 1 / N**filter_alpha` (N = number of key/value pairs) are discarded in the pseudoinverse.
             Defaults to 1.0 as in the paper.
+        ridge_alpha (`float`):
+            Relative ridge regularization strength. The solve uses
+            `lambda = ridge_alpha * max_eigenvalue(K^T K)` in retained spectral directions. This is scale-invariant
+            and can stabilize highly correlated keys. A value of 0 disables ridge regularization. Defaults to 0.
         memory_weight (`float`):
-            Interpolation weight of the fast-weight prediction: the layer output becomes
-            `(1 - memory_weight) * hidden_states + memory_weight * prediction`. Defaults to 0.9 following the
-            reference implementation. Values > 1 are allowed and extrapolate beyond the prediction, i.e. they amplify
-            the learned correction `prediction - hidden_states` (guidance-style), typically at the cost of output
-            quality.
+            Adaptation strength. In output-fit mode, the layer output becomes
+            `(1 - memory_weight) * base_output + memory_weight * prediction`; in residual-fit mode it becomes
+            `base_output + memory_weight * prediction`. Defaults to 0.9 following the reference implementation.
+            Values > 1 are allowed, typically at the cost of output quality.
+        fit_mode (`Literal["output", "residual"]`):
+            What the fast weights predict. `"output"` fits the target values directly and interpolates the base output
+            with that prediction. `"residual"` fits `target - base_output` and adds the predicted correction to the
+            base output. In both modes, `memory_weight` controls the adaptation strength. Defaults to `"output"`.
+        accumulator_dtype (`Literal["float32", "float64"]`):
+            Dtype used to form and accumulate `K^T K` and `K^T V`. `"float64"` is a diagnostic option for checking
+            whether float32 normal-equation statistics lose important spectral directions, but can be much slower on
+            consumer GPUs. Defaults to `"float32"`.
         preserve_output_scale (`bool`):
             Only supported when targeting linear output heads. If True, the adapted output is rescaled per token to
             the norm of the base layer's prediction, so the fast weights only change the direction of the output,
@@ -101,11 +112,18 @@ class FaastConfig(PeftConfig):
             )
         },
     )
+    ridge_alpha: float = field(
+        default=0.0,
+        metadata={
+            "help": (
+                "Relative ridge strength: regularize retained eigenvalue denominators by "
+                "ridge_alpha * max_eigenvalue(K^T K)."
+            )
+        },
+    )
     memory_weight: float = field(
         default=0.9,
-        metadata={
-            "help": ("Interpolation weight of the fast-weight prediction in the output of the targeted decoder layer.")
-        },
+        metadata={"help": "Strength of the direct-output interpolation or residual correction."},
     )
     preserve_output_scale: bool = field(
         default=False,
@@ -115,6 +133,19 @@ class FaastConfig(PeftConfig):
                 "weights only change the direction of the output. Only supported when targeting linear output heads."
             )
         },
+    )
+    fit_mode: Literal["output", "residual"] = field(
+        default="output",
+        metadata={
+            "help": (
+                "Fit target outputs directly ('output') or fit and add corrections relative to the base output "
+                "('residual')."
+            )
+        },
+    )
+    accumulator_dtype: Literal["float32", "float64"] = field(
+        default="float32",
+        metadata={"help": "Dtype used to form and accumulate the normal-equation sufficient statistics."},
     )
     kv_source: Literal["all", "answer"] = field(
         default="all",
@@ -140,3 +171,12 @@ class FaastConfig(PeftConfig):
             raise ValueError(f"`filter_alpha` must be non-negative, got {self.filter_alpha}.")
         if self.kv_source not in ("all", "answer"):
             raise ValueError(f"`kv_source` must be 'all' or 'answer', got {self.kv_source}.")
+        if self.ridge_alpha < 0:
+            raise ValueError(f"`ridge_alpha` must be non-negative, got {self.ridge_alpha}.")
+        if self.fit_mode not in ("output", "residual"):
+            raise ValueError(f"`fit_mode` must be 'output' or 'residual', got {self.fit_mode}.")
+        if self.accumulator_dtype not in ("float32", "float64"):
+            raise ValueError(
+                f"`accumulator_dtype` must be 'float32' or 'float64', got {self.accumulator_dtype}."
+            )
+

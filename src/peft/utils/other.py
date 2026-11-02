@@ -524,10 +524,10 @@ class AuxiliaryTrainingWrapper(torch.nn.Module):
         else:
             self._disable_adapters = True
 
-    def check_set_adapter(self, adapter_name: str | list[str]) -> str | None:
+    def check_set_adapter(self, adapter_name: str | list[str]) -> str | list[str] | None:
         """Helper function to check if the given adapter(s) can be set.
 
-        Return the name of the adapter to be set or None if no adapter should be set.
+        Return the name(s) of the adapter(s) to be set or None if no adapter should be set.
         """
         raise NotImplementedError
 
@@ -1000,10 +1000,10 @@ class TrainableTokensWrapper(AuxiliaryTrainingWrapper):
 
         self.token_adapter.enable_adapters(enabled)
 
-    def check_set_adapter(self, adapter_name: str | list[str]) -> str | None:
+    def check_set_adapter(self, adapter_name: str | list[str]) -> str | list[str] | None:
         """Helper function to check if the given adapter(s) can be set.
 
-        Return the name of the adapter to be set or None if no adapter should be set.
+        Return the name(s) of the adapter(s) to be set or None if no adapter should be set.
         """
         if isinstance(adapter_name, str):
             return adapter_name
@@ -1016,13 +1016,7 @@ class TrainableTokensWrapper(AuxiliaryTrainingWrapper):
         # raise an error if the targeted indices to be activated intersect
         self.token_adapter._check_overlapping_tokens(adapter_names_in_module)
 
-        adapter_name_to_set: str | None
-        if not adapter_names_in_module:
-            adapter_name_to_set = None
-        else:
-            adapter_name_to_set = adapter_names_in_module[0]
-
-        return adapter_name_to_set
+        return adapter_names_in_module or None
 
     def set_adapter(self, adapter_names: Union[str, list[str]], inference_mode: bool = False) -> None:
         super().set_adapter(adapter_names, inference_mode=inference_mode)
@@ -1212,14 +1206,16 @@ def _set_adapter(model, adapter_name: str | list[str], inference_mode: bool = Fa
     for module in model.modules():
         if isinstance(module, AuxiliaryTrainingWrapper):
             # only check the adapter_name if we actually encounter a AuxiliaryTrainingWrapper, otherwise we don't care
-            adapter_name_to_set = module.check_set_adapter(adapter_name)
+            adapter_names_to_set = module.check_set_adapter(adapter_name)
+            if isinstance(adapter_names_to_set, str):
+                adapter_names_to_set = [adapter_names_to_set]
 
             # if the adapter is found in this module, set it as the active adapter, else disable the adapters of this
             # module
-            if adapter_name_to_set in module._adapters:
-                module.set_adapter(adapter_name_to_set, inference_mode=inference_mode)
-            else:
-                module.set_adapter([], inference_mode=inference_mode)
+            module.set_adapter(
+                [name for name in adapter_names_to_set or [] if name in module._adapters],
+                inference_mode=inference_mode,
+            )
 
 
 def _prepare_prompt_learning_config(peft_config, model_config):

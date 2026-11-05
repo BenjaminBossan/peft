@@ -634,6 +634,14 @@ class TestTrainableTokens:
         loaded.set_adapter("other")
         assert torch.allclose(loaded(x), output_other)
 
+        # A joint selection keeps both LoRA adapters, but only the adapter with tokens belongs in the embedding.
+        loaded.set_adapter(["default", "other"])
+        assert loaded.get_input_embeddings().active_adapters == ["default"]
+        assert loaded.base_model.model.lin0.active_adapters == ["default", "other"]
+        loaded.set_adapter(["other"])
+        assert loaded.get_input_embeddings().active_adapters == []
+        torch.testing.assert_close(loaded(x), output_other)
+
     def test_stand_alone_raises_target_layer_not_found(self, model):
         config = TrainableTokensConfig(target_modules=["doesnt_exist"], token_indices=[0, 1, 3])
         with pytest.raises(ValueError) as e:
@@ -691,6 +699,71 @@ class TestTrainableTokens:
             assert model.active_adapters == ["default"]
             with pytest.raises(ValueError, match="Only disjunct token indices are currently supported"):
                 model.merge_adapter(["default", "other"])
+
+    @pytest.mark.parametrize("standalone", [True, False])
+    @pytest.mark.parametrize("active_adapters", [["default"], ["other"], ["default", "other"], ["other", "default"]])
+    @pytest.mark.parametrize("inference_mode", [False, True])
+    def test_multiple_active_adapters_same_embedding(self, standalone, active_adapters, inference_mode):
+        # Disjoint token sets on one embedding must all be applied and trained, including when LoRA owns the wrapper.
+        # Single-adapter selections also pin the behavior when an existing selection is replaced.
+        torch.manual_seed(0)
+        original_model = ModelEmb().eval()
+        token_indices = {"default": [1, 2], "other": [3, 4]}
+
+        def make_config(indices):
+            if standalone:
+                return TrainableTokensConfig(token_indices=indices)
+            return LoraConfig(target_modules=["lin0"], trainable_token_indices={"emb": indices})
+
+        model = get_peft_model(copy.deepcopy(original_model), make_config(token_indices["default"]))
+        model.add_adapter("other", make_config(token_indices["other"]))
+        embedding = model.get_input_embeddings()
+        token_adapter = embedding if standalone else embedding.token_adapter
+        for name in token_indices:
+            self.simulate_training(token_adapter, name)
+
+        model.set_adapter(["default", "other"])
+        model.set_adapter(active_adapters, inference_mode=inference_mode)
+        assert token_adapter.active_adapters == active_adapters
+        assert embedding.active_adapters == active_adapters
+
+        inputs = torch.tensor([[0, 1, 2, 3, 4, 5]])
+        expected_weight = original_model.emb.weight.detach().clone()
+        for name in active_adapters:
+            expected_weight[token_indices[name]] = token_adapter.trainable_tokens_delta[name].detach()
+        expected_embeddings = torch.nn.functional.embedding(inputs, expected_weight)
+        torch.testing.assert_close(embedding(inputs), expected_embeddings)
+
+        for name, parameter in token_adapter.trainable_tokens_delta.items():
+            assert parameter.requires_grad == (name in active_adapters and not inference_mode)
+        if not inference_mode:
+            model(inputs).sum().backward()
+            for name, parameter in token_adapter.trainable_tokens_delta.items():
+                if name in active_adapters:
+                    assert parameter.grad is not None
+                    assert parameter.grad.abs().sum() > 0
+                else:
+                    assert parameter.grad is None
+
+        with model.disable_adapter():
+            torch.testing.assert_close(embedding(inputs), original_model.emb(inputs))
+        torch.testing.assert_close(embedding(inputs), expected_embeddings)
+
+    def test_multiple_active_auxiliary_adapters_reject_overlap_without_mutation(self):
+        model = get_peft_model(ModelEmb(), LoraConfig(target_modules=["lin0"], trainable_token_indices=[1, 2]))
+        model.add_adapter("other", LoraConfig(target_modules=["lin0"], trainable_token_indices=[2, 3]))
+        model.set_adapter("default")
+        inputs = torch.tensor([[0, 1, 2, 3]])
+        expected_output = model(inputs).detach()
+        expected_trainability = {name: parameter.requires_grad for name, parameter in model.named_parameters()}
+
+        with pytest.raises(ValueError, match="Only disjunct token indices"):
+            model.set_adapter(["default", "other"])
+
+        assert model.active_adapters == ["default"]
+        assert model.get_input_embeddings().active_adapters == ["default"]
+        assert {name: parameter.requires_grad for name, parameter in model.named_parameters()} == expected_trainability
+        torch.testing.assert_close(model(inputs), expected_output)
 
     @pytest.fixture(params=[["default"], ["other"], ["default", "other"]])
     def disjoint_adapters(self, model_multi_embedding, request):

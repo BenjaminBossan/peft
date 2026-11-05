@@ -524,10 +524,10 @@ class AuxiliaryTrainingWrapper(torch.nn.Module):
         else:
             self._disable_adapters = True
 
-    def check_set_adapter(self, adapter_name: str | list[str]) -> str | list[str] | None:
+    def check_set_adapter(self, adapter_name: str | list[str]) -> list[str] | None:
         """Helper function to check if the given adapter(s) can be set.
 
-        Return the name(s) of the adapter(s) to be set or None if no adapter should be set.
+        Return the name of the adapter(s) to be set or None if no adapter should be set.
         """
         raise NotImplementedError
 
@@ -706,28 +706,25 @@ class ModulesToSaveWrapper(AuxiliaryTrainingWrapper):
             for module in self.modules_to_save.values():
                 _set_layer_requires_grad(module, False)
 
-    def check_set_adapter(self, adapter_name: str | list[str]) -> str | None:
+    def check_set_adapter(self, adapter_name: str | list[str]) -> list[str] | None:
         """Helper function to check if the given adapter(s) can be set.
 
-        Return the name of the adapter to be set or None if no adapter should be set.
+        Return the name of the adapters to be set or None if no adapter should be set. For ModulesToSaveWrapper, at
+        most one adapter can be set.
         """
         if isinstance(adapter_name, str):
-            return adapter_name
-
-        # adapter_name is a list of str
-        if len(adapter_name) == 0:
-            raise ValueError("Please specify at least one adapter to set")
+            return [adapter_name]
 
         adapter_names_in_module = [n for n in adapter_name if n in self.modules_to_save]
 
         if len(adapter_names_in_module) > 1:
             raise ValueError(f"Only one adapter can be set at a time for {self}, got {len(adapter_names_in_module)}")
 
-        adapter_name_to_set: str | None
+        adapter_name_to_set: list[str] | None
         if not adapter_names_in_module:
             adapter_name_to_set = None
         else:
-            adapter_name_to_set = adapter_names_in_module[0]
+            adapter_name_to_set = [adapter_names_in_module[0]]
 
         return adapter_name_to_set
 
@@ -857,21 +854,26 @@ class ModulesToSaveWrapper(AuxiliaryTrainingWrapper):
     ) -> torch.nn.Module:
         """Return the module that replaces this wrapper when unloading the PEFT model.
 
-        When merging, this is the modules_to_save copy of the active adapter, so that the trained weights are kept. If
-        that copy is itself a tuner layer, it is merged first. Without merging, or if no adapter is active on this
-        wrapper, the original module is returned, i.e. the base model is restored.
+        When merging, retain the selected adapter's modules_to_save copy, defaulting to the active adapter. If that
+        copy is itself a tuner layer, it is merged first. Without merging, or if no selected adapter targets this
+        wrapper, return the original module.
         """
-        if not self.active_adapters:
-            # none of the modules_to_save adapters of this module are active, e.g. because the model's active adapter
-            # does not use modules_to_save on this module; like in forward, the original module is used in this case
-            return self.original_module
-
         if not merge:
-            # without merging, unloading should give back the base model, so the original module is returned instead
-            # of the trained modules_to_save copy
             return self.original_module
 
-        new_module = self.modules_to_save[self.active_adapter]
+        selected_adapters = self.active_adapters if adapter_names is None else adapter_names
+        adapter_name = self.check_set_adapter(selected_adapters) if selected_adapters else None
+        if adapter_name is None:
+            return self.original_module
+
+        if len(adapter_name) != 1:
+            raise RuntimeError(
+                f"Something went wrong, cannot merge {adapter_name} as only exactly one adapter can be merged. "
+                "Please open an issue and report the error: https://github.com/huggingface/peft/issues."
+            )
+
+        adapter_name = adapter_name[0]  # ModulesToSaveWrapper only allows one adapter
+        new_module = self.modules_to_save[adapter_name]
 
         # TODO: not sure if this is still a sensible thing to do. We would basically have to
         # do the same checks as `_unload_and_optionally_merge` to support MHA, for example.
@@ -1000,23 +1002,19 @@ class TrainableTokensWrapper(AuxiliaryTrainingWrapper):
 
         self.token_adapter.enable_adapters(enabled)
 
-    def check_set_adapter(self, adapter_name: str | list[str]) -> str | list[str] | None:
+    def check_set_adapter(self, adapter_name: str | list[str]) -> list[str] | None:
         """Helper function to check if the given adapter(s) can be set.
 
-        Return the name(s) of the adapter(s) to be set or None if no adapter should be set.
+        Return the name of the adapter to be set or None if no adapter should be set.
         """
         if isinstance(adapter_name, str):
-            return adapter_name
+            return [adapter_name]
 
-        # adapter_name is a list of str
-        if len(adapter_name) == 0:
-            raise ValueError("Please specify at least one adapter to set")
+        adapter_names = [n for n in adapter_name if n in self.token_adapter.trainable_tokens_delta]
+        if len(adapter_names) > 1:
+            self.token_adapter._check_overlapping_tokens(adapter_names)
 
-        adapter_names_in_module = [n for n in adapter_name if n in self.token_adapter.trainable_tokens_delta]
-        # raise an error if the targeted indices to be activated intersect
-        self.token_adapter._check_overlapping_tokens(adapter_names_in_module)
-
-        return adapter_names_in_module or None
+        return adapter_names
 
     def set_adapter(self, adapter_names: Union[str, list[str]], inference_mode: bool = False) -> None:
         super().set_adapter(adapter_names, inference_mode=inference_mode)
@@ -1061,8 +1059,15 @@ class TrainableTokensWrapper(AuxiliaryTrainingWrapper):
         """Unloading for `TrainableTokensWrapper` means to return the wrapped module, e.g. the embedding layer and,
         if requested, merging the `TrainableTokens` adapter onto the wrapped module.
         """
-        if merge:
-            self.token_adapter.merge(safe_merge=safe_merge, adapter_names=adapter_names)
+        if not merge:
+            return self.token_adapter.get_base_layer()
+
+        selected_adapters = self.active_adapters if adapter_names is None else adapter_names
+        adapter_to_merge = self.check_set_adapter(selected_adapters) if selected_adapters else None
+        if not adapter_to_merge:
+            return self.token_adapter.get_base_layer()
+
+        self.token_adapter.merge(safe_merge=safe_merge, adapter_names=adapter_to_merge)
         return self.token_adapter.get_base_layer()
 
     def _get_available_adapters(self) -> set[str]:
@@ -1206,16 +1211,14 @@ def _set_adapter(model, adapter_name: str | list[str], inference_mode: bool = Fa
     for module in model.modules():
         if isinstance(module, AuxiliaryTrainingWrapper):
             # only check the adapter_name if we actually encounter a AuxiliaryTrainingWrapper, otherwise we don't care
-            adapter_names_to_set = module.check_set_adapter(adapter_name)
-            if isinstance(adapter_names_to_set, str):
-                adapter_names_to_set = [adapter_names_to_set]
+            adapter_name_to_set = module.check_set_adapter(adapter_name)
 
             # if the adapter is found in this module, set it as the active adapter, else disable the adapters of this
             # module
-            module.set_adapter(
-                [name for name in adapter_names_to_set or [] if name in module._adapters],
-                inference_mode=inference_mode,
-            )
+            if adapter_name_to_set and set(module._adapters).issuperset(adapter_name_to_set):
+                module.set_adapter(adapter_name_to_set, inference_mode=inference_mode)
+            else:
+                module.set_adapter([], inference_mode=inference_mode)
 
 
 def _prepare_prompt_learning_config(peft_config, model_config):

@@ -119,7 +119,7 @@ def calculate_mean_per_token_loss(model, tokenizer, rows: list[str], batch_size:
         sliced = rows[j : j + batch_size]
         batch = tokenizer(sliced, truncation=True, max_length=max_length)
         batch = tokenizer.pad(batch, return_tensors="pt", padding_side="left").to(model.device)
-        outputs = model(**batch)
+        outputs = model(**batch, use_cache=False)
         logits = outputs.logits
         for logit, target, mask in zip(logits, batch["input_ids"], batch["attention_mask"]):
             # calculate loss per token so that the mean is not skewed by sequence length of sample, padding from left
@@ -279,7 +279,7 @@ def train(
             # train step
             optimizer.zero_grad()
             with autocast_ctx():
-                outputs = model(**batch, num_items_in_batch=num_items_in_batch)
+                outputs = model(**batch, use_cache=False, num_items_in_batch=num_items_in_batch)
                 loss = outputs.loss
             grad_scaler.scale(loss).backward()
             if grad_norm_clip:
@@ -464,6 +464,8 @@ def main(*, path_experiment: str, experiment_name: str, clean: bool, bucket_name
         dtype=train_config.dtype,
         compile=train_config.compile,
         use_gc=train_config.use_gc,
+        gc_every_n_layers=train_config.gc_every_n_layers,
+        gc_mode=train_config.gc_mode,
         attn_implementation=train_config.attn_implementation,
         peft_config=peft_config,
         autocast_adapter_dtype=train_config.autocast_adapter_dtype,

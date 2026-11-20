@@ -8,6 +8,8 @@
   "eval_steps": 250,
   "compile": false,
   "use_gc": false,
+  "gc_every_n_layers": 1,
+  "gc_mode": "layers",
   "seed": 0,
   "grad_norm_clip": 1.0,
   "optimizer_type": "AdamW",

@@ -17,7 +17,7 @@ The train set uses the whole of MetaMathQA. The validation set is a random sampl
 Create an experiment in the `experiment/<peft-method>` folder of your choice and give it a name (the name itself does not matter but helps identify the experiment). An example would be `experiments/lora/llama-3.2-3B-rank32/`. Inside that directory, create 2 files:
 
 - `adapter_config.json`
-- Optional: `training_parameters.json`
+- `training_params.json` (optional)
 
 Once you created these two files, you can either
 
@@ -60,11 +60,28 @@ config = LoraConfig(...)
 config.save_pretrained(<path-to-experiment>)
 ```
 
-### `training_parameters.json`
+### `training_params.json`
 
-There is a default file for the non-PEFT parameters: `default_training_params.json`. This contains all the other parameters that are relevant for training, e.g. the base model id, number of steps, batch size, learning rate, etc. If parameters that differ from the defaults are needed for a specific experiment, place a `training_parameters.json` into the experiment directory and adjust the parameters that need changing. The other parametes are taken from the aforementioned default config.
+The `default_training_params.json` file defines training parameters such as base model ID, number of steps, batch size, and learning rate. Set experiment-specific overrides in `training_params.json` in the experiment directory. Other parameters use the defaults.
 
 For an overview of all possible arguments, you can also check the `TrainConfig` `dataclass` in `utils.py`.
+
+#### Activation checkpointing
+
+Set one of these overrides in `training_params.json`. All enabled modes use non-reentrant checkpointing. (Note: activation checkpointing used to be called "gradient checkpointing" in Transformers, hence the "gc" abbreviation.)
+
+| Mode                       | Overrides                                                                               |
+|----------------------------|-----------------------------------------------------------------------------------------|
+| Off (default)              | `{"use_gc": false}`                                                                     |
+| Full                       | `{"use_gc": true}`                                                                      |
+| Every Nth decoder layer    | `{"use_gc": true, "gc_every_n_layers": 2}` for layers 0, 2, 4, and so on                |
+| MLP only                   | `{"use_gc": true, "gc_mode": "mlp"}` for every module whose name ends in `.mlp`         |
+| SwiGLU only                | `{"use_gc": true, "gc_mode": "swiglu"}` for the SiLU and elementwise product            |
+| SwiGLU and down projection | `{"use_gc": true, "gc_mode": "swiglu_down"}` for the SiLU, product, and down projection |
+
+Every-Nth-layer mode requires a Transformers version whose checkpointing API supports `every_n_layers`. The SwiGLU modes require the standard unfused Llama MLP and keep the gate and up projections outside the checkpoint. Training forwards disable the KV cache across all modes so the comparison uses the same cache setting.
+
+The `tokens / sec` entries measure training throughput between evaluations. `accelerator_memory_max` is based on peak reserved memory across the run, including generation, while `mem allocated avg` samples memory after training steps. A training-only peak allocated memory metric would show activation savings that those numbers can miss.
 
 #### About `torch.compile`
 

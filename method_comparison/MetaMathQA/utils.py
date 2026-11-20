@@ -26,6 +26,7 @@ import warnings
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from decimal import Decimal, DivisionByZero, InvalidOperation
+from functools import wraps
 from typing import Any, Literal, Optional
 
 import bitsandbytes
@@ -35,6 +36,7 @@ import numpy as np
 import torch
 import transformers
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -65,6 +67,7 @@ RESULT_PATH_TEST = os.path.join(os.path.dirname(__file__), "temporary_results")
 RESULT_PATH_CANCELLED = os.path.join(os.path.dirname(__file__), "cancelled_results")
 hf_api = huggingface_hub.HfApi()
 WARMUP_STEP_RATIO = 0.1
+CheckpointingMode = Literal["layers", "mlp", "swiglu", "swiglu_down"]
 
 
 @dataclass
@@ -80,7 +83,9 @@ class TrainConfig:
         max_steps: The maximum number of steps to train for
         eval_steps: The number of steps between evaluations
         compile: Whether to compile the model
-        use_gc: Whether to use gradient checkpointing.
+        use_gc: Whether to use non-reentrant activation checkpointing.
+        gc_every_n_layers: Checkpoint every Nth decoder layer, starting with the first. Defaults to every layer.
+        gc_mode: Region to checkpoint when enabled. Defaults to decoder layers.
         query_template: The template for the query
         seed: The random seed
         grad_norm_clip: The gradient norm clipping value (set to 0 to skip)
@@ -113,6 +118,8 @@ class TrainConfig:
     generation_kwargs: dict[str, Any]
     attn_implementation: Optional[str]
     init_kv_cache_prefix: Optional[str]
+    gc_every_n_layers: int = 1
+    gc_mode: CheckpointingMode = "layers"
 
     def __post_init__(self) -> None:
         if not isinstance(self.model_id, str):
@@ -131,6 +138,14 @@ class TrainConfig:
             raise ValueError(f"Invalid eval_steps: {self.eval_steps}")
         if self.eval_steps > self.max_steps:
             raise ValueError(f"Invalid eval_steps: {self.eval_steps} > max_steps: {self.max_steps}")
+        if type(self.gc_every_n_layers) is not int or self.gc_every_n_layers < 1:
+            raise ValueError("gc_every_n_layers must be a positive integer")
+        if self.gc_mode not in ("layers", "mlp", "swiglu", "swiglu_down"):
+            raise ValueError(f"Invalid gc_mode: {self.gc_mode}")
+        if self.gc_every_n_layers > 1 and self.gc_mode != "layers":
+            raise ValueError("gc_every_n_layers can only be used with gc_mode='layers'")
+        if not self.use_gc and (self.gc_every_n_layers > 1 or self.gc_mode != "layers"):
+            raise ValueError("Changing gc_every_n_layers or gc_mode requires use_gc=True")
         if self.grad_norm_clip < 0:
             raise ValueError(f"Invalid grad_norm_clip: {self.grad_norm_clip}")
         if self.optimizer_type not in ["lora+", "lora-fa", "riemannian"] and not hasattr(
@@ -221,6 +236,7 @@ def get_base_model(
     dtype: Literal["float32", "float16", "bfloat16", "int8", "int4"],
     attn_implementation: Optional[str],
     use_gc: bool,
+    gc_every_n_layers: int = 1,
 ) -> PreTrainedModel:
     kwargs: dict[str, Any] = {
         "pretrained_model_name_or_path": model_id,
@@ -242,10 +258,53 @@ def get_base_model(
 
     model = AutoModelForCausalLM.from_pretrained(**kwargs)
     if use_gc:
-        model.enable_input_require_grads()
-        activation_checkpointing_enable(model)
+        layer_kwargs = {"every_n_layers": gc_every_n_layers} if gc_every_n_layers > 1 else {}
+        activation_checkpointing_enable(model, {"use_reentrant": False}, **layer_kwargs)
 
     return model
+
+
+def enable_mlp_checkpointing(model: nn.Module, mode: Literal["mlp", "swiglu", "swiglu_down"]) -> None:
+    checkpoint_down_proj = mode == "swiglu_down"
+
+    targets = [(name, module) for name, module in model.named_modules() if name.endswith(".mlp")]
+    if not targets:
+        raise ValueError(f"gc_mode={mode!r} requires at least one module whose name ends in '.mlp'")
+
+    if mode != "mlp":
+        from transformers.models.llama.modeling_llama import LlamaMLP
+
+        # The SwiGLU modes reproduce the eager Llama MLP forward around a different checkpoint boundary.
+        for name, module in targets:
+            if type(module) is not LlamaMLP or module.config.hidden_act != "silu" or "forward" in vars(module):
+                raise ValueError(
+                    f"gc_mode={mode!r} requires an unfused Llama SwiGLU MLP with its original forward: {name}"
+                )
+
+    def wrap_forward(module: nn.Module) -> None:
+        original_forward = module.forward
+
+        def swiglu_region(gate, up):
+            hidden_states = module.act_fn(gate) * up
+            return module.down_proj(hidden_states) if checkpoint_down_proj else hidden_states
+
+        def checkpoint_swiglu(x):
+            gate, up = module.gate_proj(x), module.up_proj(x)
+            output = checkpoint(swiglu_region, gate, up, use_reentrant=False)
+            return output if checkpoint_down_proj else module.down_proj(output)
+
+        @wraps(original_forward)
+        def forward(*args, **kwargs):
+            if not module.training or not torch.is_grad_enabled():
+                return original_forward(*args, **kwargs)
+            if mode == "mlp":
+                return checkpoint(original_forward, *args, use_reentrant=False, **kwargs)
+            return checkpoint_swiglu(*args, **kwargs)
+
+        module.forward = forward
+
+    for _, module in targets:
+        wrap_forward(module)
 
 
 def get_model(
@@ -257,12 +316,23 @@ def get_model(
     attn_implementation: Optional[str],
     peft_config: Optional[PeftConfig],
     autocast_adapter_dtype: bool,
+    gc_every_n_layers: int = 1,
+    gc_mode: CheckpointingMode = "layers",
 ) -> nn.Module:
-    base_model = get_base_model(model_id=model_id, dtype=dtype, attn_implementation=attn_implementation, use_gc=use_gc)
+    base_model = get_base_model(
+        model_id=model_id,
+        dtype=dtype,
+        attn_implementation=attn_implementation,
+        use_gc=use_gc and gc_mode == "layers",
+        gc_every_n_layers=gc_every_n_layers,
+    )
     if peft_config is None:
         model = base_model
     else:
         model = get_peft_model(base_model, peft_config, autocast_adapter_dtype=autocast_adapter_dtype)
+
+    if use_gc and gc_mode != "layers":
+        enable_mlp_checkpointing(model, gc_mode)
 
     if compile:
         model = torch.compile(model, dynamic=True)
